@@ -1,0 +1,9 @@
+interface:
+  display_name: "Hello World"
+  short_description: "Greet the user"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools: []

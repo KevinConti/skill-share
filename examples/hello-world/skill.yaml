@@ -1,0 +1,19 @@
+name: hello-world
+description: Greet the user and demonstrate basic skill structure
+version: 1.0.0
+license: MIT
+homepage: https://github.com/example/hello-world-skill
+repository: https://github.com/example/hello-world-skill
+
+metadata:
+  author: Example Author
+  author_email: author@example.com
+  tags: [example, greeting, demo]
+
+dependencies: []
+
+config:
+  - name: greeting_style
+    description: Style of greeting (formal, casual, enthusiastic)
+    required: false
+    default: casual
