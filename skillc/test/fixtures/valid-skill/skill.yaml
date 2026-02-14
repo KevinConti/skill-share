@@ -1,0 +1,32 @@
+name: test-skill
+description: A test skill for validation
+version: 1.2.3
+license: MIT
+homepage: https://example.com/test-skill
+repository: https://github.com/example/test-skill
+
+metadata:
+  author: Test Author
+  author_email: test@example.com
+  tags:
+    - test
+    - example
+    - demo
+
+dependencies:
+  - name: helper-skill
+    version: "^1.0.0"
+    optional: false
+  - name: extra-skill
+    version: "~2.1.0"
+    optional: true
+
+config:
+  - name: api_key
+    description: API key for authentication
+    required: true
+    secret: true
+  - name: timeout
+    description: Request timeout in seconds
+    required: false
+    default: "30"

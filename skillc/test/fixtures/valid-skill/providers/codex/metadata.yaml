@@ -1,0 +1,9 @@
+interface:
+  display_name: "Test Skill"
+  short_description: "A test skill"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools: []

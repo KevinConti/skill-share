@@ -1,0 +1,9 @@
+emoji: "🧪"
+requires:
+  bins: [python3, curl]
+install:
+  - id: pip
+    kind: pip
+    package: test-cli
+    bins: [test-cli]
+    label: Install Test CLI (pip)
