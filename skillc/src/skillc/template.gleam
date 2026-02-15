@@ -22,6 +22,14 @@ const key_last = "@last"
 
 const key_this = "this"
 
+type ConditionalBlock {
+  ConditionalBlock(
+    if_content: String,
+    else_content: Option(String),
+    remaining: String,
+  )
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -244,17 +252,16 @@ fn do_render(
             // Block helpers
             "#if " <> path -> {
               let path = string.trim(path)
-              use #(block_content, rest) <- result.try(find_block_end(
+              use block <- result.try(find_block_end_with_else(
                 after_close,
                 "if",
                 source_line,
               ))
               let value = resolve_path(path, ctx)
+              let should_render = is_truthy(value)
               render_conditional_block(
-                is_truthy(value),
-                False,
-                block_content,
-                rest,
+                should_render,
+                block,
                 before,
                 ctx,
                 acc,
@@ -263,17 +270,16 @@ fn do_render(
             }
             "#unless " <> path -> {
               let path = string.trim(path)
-              use #(block_content, rest) <- result.try(find_block_end(
+              use block <- result.try(find_block_end_with_else(
                 after_close,
                 "unless",
                 source_line,
               ))
               let value = resolve_path(path, ctx)
+              let should_render = !is_truthy(value)
               render_conditional_block(
-                is_truthy(value),
-                True,
-                block_content,
-                rest,
+                should_render,
+                block,
                 before,
                 ctx,
                 acc,
@@ -335,30 +341,51 @@ fn do_render(
 }
 
 fn render_conditional_block(
-  is_truthy_result: Bool,
-  invert: Bool,
-  block_content: String,
-  rest: String,
+  should_render: Bool,
+  block: ConditionalBlock,
   before: String,
   ctx: Value,
   acc: String,
   line: Int,
 ) -> Result(#(String, Int), SkillError) {
-  let should_render = case invert {
-    True -> !is_truthy_result
-    False -> is_truthy_result
+  let total_content = case block.else_content {
+    Some(else_content) -> block.if_content <> "{{else}}" <> else_content
+    None -> block.if_content
   }
-  let after_block_line = line + count_newlines(block_content)
+  let after_block_line = line + count_newlines(total_content)
   case should_render {
     True -> {
       use #(rendered_block, _) <- result.try(render_tokens(
-        block_content,
+        block.if_content,
         ctx,
         line,
       ))
-      do_render(rest, ctx, acc <> before <> rendered_block, after_block_line)
+      do_render(
+        block.remaining,
+        ctx,
+        acc <> before <> rendered_block,
+        after_block_line,
+      )
     }
-    False -> do_render(rest, ctx, acc <> before, after_block_line)
+    False -> {
+      case block.else_content {
+        Some(else_content) -> {
+          use #(rendered_else, _) <- result.try(render_tokens(
+            else_content,
+            ctx,
+            line + count_newlines(block.if_content),
+          ))
+          do_render(
+            block.remaining,
+            ctx,
+            acc <> before <> rendered_else,
+            after_block_line,
+          )
+        }
+        None ->
+          do_render(block.remaining, ctx, acc <> before, after_block_line)
+      }
+    }
   }
 }
 
@@ -493,6 +520,163 @@ fn do_find_block_end(
         }
       }
     }
+  }
+}
+
+fn find_block_end_with_else(
+  content: String,
+  block_type: String,
+  open_line: Int,
+) -> Result(ConditionalBlock, SkillError) {
+  let open_tag = "{{#" <> block_type <> " "
+  let close_tag = "{{/" <> block_type <> "}}"
+  let else_tag = "{{else}}"
+  do_find_block_end_with_else(
+    content,
+    open_tag,
+    close_tag,
+    else_tag,
+    1,
+    "",
+    None,
+    open_line,
+  )
+}
+
+fn do_find_block_end_with_else(
+  remaining: String,
+  open_tag: String,
+  close_tag: String,
+  else_tag: String,
+  depth: Int,
+  acc: String,
+  else_split: Option(String),
+  open_line: Int,
+) -> Result(ConditionalBlock, SkillError) {
+  case depth {
+    0 ->
+      case else_split {
+        Some(if_content) ->
+          Ok(ConditionalBlock(
+            if_content: if_content,
+            else_content: Some(acc),
+            remaining: remaining,
+          ))
+        None ->
+          Ok(ConditionalBlock(
+            if_content: acc,
+            else_content: None,
+            remaining: remaining,
+          ))
+      }
+    _ -> {
+      let open_pos = find_position(remaining, open_tag)
+      let close_pos = find_position(remaining, close_tag)
+      let else_pos = case depth {
+        1 -> find_position(remaining, else_tag)
+        _ -> None
+      }
+      case close_pos {
+        None -> {
+          let block_name =
+            open_tag
+            |> string.replace("{{#", "")
+            |> string.trim()
+          Error(TemplateError(
+            open_line,
+            "Unclosed {{#" <> block_name <> "}} block",
+          ))
+        }
+        Some(cp) -> {
+          // Check if else comes before both open and close at depth 1
+          let use_else = case else_pos, else_split {
+            Some(ep), None if ep < cp -> is_before_open(ep, open_pos)
+            _, _ -> False
+          }
+          case use_else, else_pos {
+            True, Some(ep) -> {
+              let before_else = string.slice(remaining, 0, ep)
+              let after_else =
+                string.drop_start(remaining, ep + string.length(else_tag))
+              do_find_block_end_with_else(
+                after_else,
+                open_tag,
+                close_tag,
+                else_tag,
+                depth,
+                "",
+                Some(acc <> before_else),
+                open_line,
+              )
+            }
+            _, _ -> {
+              case open_pos {
+                Some(op) if op < cp -> {
+                  let before_len = op + string.length(open_tag)
+                  let before = string.slice(remaining, 0, before_len)
+                  let rest = string.drop_start(remaining, before_len)
+                  do_find_block_end_with_else(
+                    rest,
+                    open_tag,
+                    close_tag,
+                    else_tag,
+                    depth + 1,
+                    acc <> before,
+                    else_split,
+                    open_line,
+                  )
+                }
+                _ -> {
+                  case depth {
+                    1 -> {
+                      let block_content = string.slice(remaining, 0, cp)
+                      let rest =
+                        string.drop_start(remaining, cp + string.length(close_tag))
+                      case else_split {
+                        Some(if_content) ->
+                          Ok(ConditionalBlock(
+                            if_content: if_content,
+                            else_content: Some(acc <> block_content),
+                            remaining: rest,
+                          ))
+                        None ->
+                          Ok(ConditionalBlock(
+                            if_content: acc <> block_content,
+                            else_content: None,
+                            remaining: rest,
+                          ))
+                      }
+                    }
+                    _ -> {
+                      let before_len = cp + string.length(close_tag)
+                      let before = string.slice(remaining, 0, before_len)
+                      let rest = string.drop_start(remaining, before_len)
+                      do_find_block_end_with_else(
+                        rest,
+                        open_tag,
+                        close_tag,
+                        else_tag,
+                        depth - 1,
+                        acc <> before,
+                        else_split,
+                        open_line,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn is_before_open(else_pos: Int, open_pos: Option(Int)) -> Bool {
+  case open_pos {
+    None -> True
+    Some(op) -> else_pos < op
   }
 }
 

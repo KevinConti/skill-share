@@ -312,6 +312,112 @@ pub fn each_empty_list_test() {
 }
 
 // ============================================================================
+// §2.3b Conditional Else Blocks
+// ============================================================================
+
+pub fn if_else_truthy_renders_if_branch_test() {
+  let result =
+    template.render_template(
+      "{{#if meta.emoji}}has emoji{{else}}no emoji{{/if}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "has emoji"))
+  should.be_false(string.contains(output, "no emoji"))
+}
+
+pub fn if_else_falsy_renders_else_branch_test() {
+  let result =
+    template.render_template(
+      "{{#if meta.nonexistent}}yes{{else}}no{{/if}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "no"))
+  should.be_false(string.contains(output, "yes"))
+}
+
+pub fn unless_else_truthy_renders_else_branch_test() {
+  let result =
+    template.render_template(
+      "{{#unless meta.emoji}}hidden{{else}}shown{{/unless}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "shown"))
+  should.be_false(string.contains(output, "hidden"))
+}
+
+pub fn unless_else_falsy_renders_unless_branch_test() {
+  let result =
+    template.render_template(
+      "{{#unless meta.nonexistent}}shown{{else}}hidden{{/unless}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "shown"))
+  should.be_false(string.contains(output, "hidden"))
+}
+
+pub fn if_else_with_variables_test() {
+  let result =
+    template.render_template(
+      "{{#if meta.emoji}}Icon: {{meta.emoji}}{{else}}Name: {{name}}{{/if}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "Icon:"))
+}
+
+pub fn if_else_falsy_with_variables_test() {
+  let result =
+    template.render_template(
+      "{{#if meta.nonexistent}}hidden{{else}}fallback: {{name}}{{/if}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "fallback: test-skill"))
+}
+
+pub fn nested_if_else_test() {
+  let result =
+    template.render_template(
+      "{{#if meta.emoji}}{{#if meta.nonexistent}}inner{{else}}outer else{{/if}}{{else}}top else{{/if}}",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "outer else"))
+  should.be_false(string.contains(output, "inner"))
+  should.be_false(string.contains(output, "top else"))
+}
+
+pub fn if_else_empty_else_block_test() {
+  let result =
+    template.render_template(
+      "before{{#if meta.nonexistent}}content{{else}}{{/if}}after",
+      types.OpenClaw,
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
+}
+
+// ============================================================================
 // §2.4 Escaping
 // ============================================================================
 

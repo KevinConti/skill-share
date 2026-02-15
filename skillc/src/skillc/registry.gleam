@@ -7,9 +7,11 @@ import skillc/compiler
 import skillc/error.{type SkillError, RegistryError, map_file_error}
 import skillc/parser
 import skillc/path
+import skillc/platform
 import skillc/semver
 import skillc/shell
 import skillc/types
+import skillc/version_constraint
 
 // ============================================================================
 // Publish
@@ -26,7 +28,7 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
   let version_str = semver.to_string(skill.version)
   let tag = "v" <> version_str
   let tarball_name = skill.name <> "-" <> version_str <> ".tar.gz"
-  let tarball_path = "/tmp/" <> tarball_name
+  let tarball_path = platform.tmpdir() <> "/" <> tarball_name
 
   // 2. Create tarball of skill source directory
   let parent = path.parent_dir(skill_dir)
@@ -159,7 +161,10 @@ pub fn install(
   let #(repo, version) = parse_install_spec(spec)
 
   // 2. Create temp directory
-  let tmp_dir = "/tmp/skillc-install-" <> string.replace(repo, "/", "-")
+  let tmp_dir =
+    platform.tmpdir()
+    <> "/skillc-install-"
+    <> string.replace(repo, "/", "-")
   let _ = simplifile.delete(tmp_dir)
   use _ <- result.try(
     simplifile.create_directory_all(tmp_dir)
@@ -248,10 +253,13 @@ pub fn install(
     }
   })
 
-  // 8. Clean up
+  // 8. Check dependencies
+  let dep_warnings = check_install_dependencies(skill_dir, output_dir)
+
+  // 9. Clean up
   let _ = simplifile.delete(tmp_dir)
 
-  Ok(result_msg)
+  Ok(result_msg <> dep_warnings)
 }
 
 pub fn parse_install_spec(spec: String) -> #(String, Option(String)) {
@@ -341,6 +349,42 @@ pub fn list_installed(output_dir: String) -> Result(String, SkillError) {
         _ -> Ok("Installed skills:\n" <> string.join(skills, "\n"))
       }
     }
+  }
+}
+
+fn check_install_dependencies(
+  skill_dir: String,
+  output_dir: String,
+) -> String {
+  case simplifile.read(skill_dir <> "/skill.yaml") {
+    Ok(content) ->
+      case parser.parse_skill_yaml(content) {
+        Ok(skill) -> {
+          let warnings = compiler.check_dependencies(skill, output_dir)
+          case warnings {
+            [] -> ""
+            _ -> {
+              let lines =
+                list.filter_map(warnings, fn(w) {
+                  case w {
+                    types.MissingDependency(dep) ->
+                      Ok(
+                        "\nWarning: missing dependency '"
+                        <> dep.name
+                        <> "' ("
+                        <> version_constraint.to_string(dep.version)
+                        <> ")",
+                      )
+                    _ -> Error(Nil)
+                  }
+                })
+              string.join(lines, "")
+            }
+          }
+        }
+        Error(_) -> ""
+      }
+    Error(_) -> ""
   }
 }
 

@@ -6,6 +6,7 @@ import gleam/result
 import gleam/string
 import simplifile
 import skillc/compiler
+import skillc/config
 import skillc/error
 import skillc/importer
 import skillc/parser
@@ -14,6 +15,7 @@ import skillc/registry
 import skillc/scaffold
 import skillc/semver
 import skillc/types
+import skillc/version_constraint
 
 pub fn version() -> String {
   "1.0.0"
@@ -39,6 +41,8 @@ pub fn run(args: List(String)) -> Result(String, String) {
     ["install", ..rest] -> run_install(rest)
     ["list", ..rest] -> run_list(rest)
     ["import", ..rest] -> run_import(rest)
+    ["config", "init", skill_dir] -> do_config_init(skill_dir)
+    ["config", "check", skill_dir] -> do_config_check(skill_dir)
     ["version"] -> Ok("skillc " <> version())
     ["help"] -> Ok(usage_text())
     ["--help"] -> Ok(usage_text())
@@ -138,7 +142,10 @@ fn do_compile_all(
   output_dir: String,
 ) -> Result(String, String) {
   case compiler.compile_all(skill_dir) {
-    Ok(compiled_list) -> emit_compiled_list(compiled_list, output_dir)
+    Ok(compiled_list) -> {
+      use result <- result.try(emit_compiled_list(compiled_list, output_dir))
+      Ok(result <> check_deps_after_compile(skill_dir, output_dir))
+    }
     Error(err) -> Error("Error: " <> error.to_string(err))
   }
 }
@@ -153,7 +160,10 @@ fn do_compile_providers(
     |> list.map(string.trim)
     |> list.filter(fn(s) { !string.is_empty(s) })
   case compiler.compile_providers(skill_dir, providers) {
-    Ok(compiled_list) -> emit_compiled_list(compiled_list, output_dir)
+    Ok(compiled_list) -> {
+      use result <- result.try(emit_compiled_list(compiled_list, output_dir))
+      Ok(result <> check_deps_after_compile(skill_dir, output_dir))
+    }
     Error(err) -> Error("Error: " <> error.to_string(err))
   }
 }
@@ -179,6 +189,20 @@ fn emit_compiled_list(
     }),
   )
   Ok(string.join(lines, "\n"))
+}
+
+fn check_deps_after_compile(
+  skill_dir: String,
+  output_dir: String,
+) -> String {
+  case simplifile.read(skill_dir <> "/skill.yaml") {
+    Ok(content) ->
+      case parser.parse_skill_yaml(content) {
+        Ok(skill) -> format_warnings(compiler.check_dependencies(skill, output_dir))
+        Error(_) -> ""
+      }
+    Error(_) -> ""
+  }
 }
 
 fn do_init(skill_dir: String, name: String) -> Result(String, String) {
@@ -258,6 +282,65 @@ fn do_import(
   }
 }
 
+fn do_config_init(skill_dir: String) -> Result(String, String) {
+  case simplifile.read(skill_dir <> "/skill.yaml") {
+    Error(_) -> Error("Error: skill.yaml not found in " <> skill_dir)
+    Ok(content) ->
+      case parser.parse_skill_yaml(content) {
+        Error(err) -> Error("Error: " <> error.to_string(err))
+        Ok(skill) -> Ok(config.generate_template(skill))
+      }
+  }
+}
+
+fn do_config_check(skill_dir: String) -> Result(String, String) {
+  case simplifile.read(skill_dir <> "/skill.yaml") {
+    Error(_) -> Error("Error: skill.yaml not found in " <> skill_dir)
+    Ok(content) ->
+      case parser.parse_skill_yaml(content) {
+        Error(err) -> Error("Error: " <> error.to_string(err))
+        Ok(skill) -> {
+          let statuses = config.check(skill)
+          let missing =
+            list.filter_map(statuses, fn(s) {
+              case s {
+                config.Missing(field:) ->
+                  Ok("  MISSING: " <> field.name <> " - " <> field.description)
+                _ -> Error(Nil)
+              }
+            })
+          let satisfied =
+            list.filter_map(statuses, fn(s) {
+              case s {
+                config.Satisfied(field:, ..) -> Ok("  OK: " <> field.name)
+                _ -> Error(Nil)
+              }
+            })
+          case missing {
+            [] ->
+              Ok(
+                "All configuration satisfied for "
+                <> skill.name
+                <> "\n"
+                <> string.join(satisfied, "\n"),
+              )
+            _ ->
+              Error(
+                "Missing configuration for "
+                <> skill.name
+                <> ":\n"
+                <> string.join(missing, "\n")
+                <> case satisfied {
+                  [] -> ""
+                  _ -> "\n\nSatisfied:\n" <> string.join(satisfied, "\n")
+                },
+              )
+          }
+        }
+      }
+  }
+}
+
 fn do_check(skill_dir: String) -> Result(String, String) {
   case simplifile.read(skill_dir <> "/skill.yaml") {
     Error(_) -> Error("Error: skill.yaml not found in " <> skill_dir)
@@ -314,6 +397,12 @@ fn format_warnings(warnings: List(types.CompileWarning)) -> String {
             "Warning: "
             <> file
             <> " contains YAML frontmatter which will be included as-is in the output"
+          types.MissingDependency(dep) ->
+            "Warning: missing dependency '"
+            <> dep.name
+            <> "' ("
+            <> version_constraint.to_string(dep.version)
+            <> ")"
         }
       })
       |> string.join("\n")
@@ -334,6 +423,8 @@ Usage:
   skillc import <source>                              Import a provider-specific skill
   skillc import <source> --provider <provider>        Import with explicit provider
   skillc import <source> --output <dir>               Import to custom output dir
+  skillc config init <skill-dir>                      Generate .env template
+  skillc config check <skill-dir>                     Check config env vars
   skillc publish <skill-dir>                          Publish to GitHub Releases
   skillc publish <skill-dir> --repo <owner/repo>      Publish to specific repo
   skillc search <query>                               Search for skills

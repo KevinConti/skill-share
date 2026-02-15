@@ -7,6 +7,7 @@ import simplifile
 import skillc/error.{type SkillError, ImportError, map_file_error}
 import skillc/fs
 import skillc/path
+import skillc/platform
 import skillc/semver.{type SemVer}
 import skillc/shell
 import skillc/types.{type FileCopy, type Provider, ClaudeCode, Codex, FileCopy, OpenClaw}
@@ -587,7 +588,7 @@ pub fn fetch_source(source: String) -> Result(ResolvedSource, SkillError) {
 }
 
 fn fetch_remote(url: String) -> Result(ResolvedSource, SkillError) {
-  let tmp_dir = "/tmp/skillc-import-" <> hash_string(url)
+  let tmp_dir = platform.tmpdir() <> "/skillc-import-" <> hash_string(url)
   case simplifile.create_directory_all(tmp_dir) {
     Error(_) ->
       Error(ImportError(url, "Failed to create temp directory"))

@@ -15,6 +15,26 @@ pub opaque type SemVer {
   )
 }
 
+pub fn new(
+  major: Int,
+  minor: Int,
+  patch: Int,
+) -> Result(SemVer, SkillError) {
+  case major >= 0, minor >= 0, patch >= 0 {
+    True, True, True ->
+      Ok(SemVer(major: major, minor: minor, patch: patch, prerelease: None, build: None))
+    _, _, _ ->
+      Error(ValidationError(
+        "version",
+        "SemVer components must be non-negative",
+      ))
+  }
+}
+
+pub fn prerelease(ver: SemVer) -> Option(String) {
+  ver.prerelease
+}
+
 pub fn parse(version: String) -> Result(SemVer, SkillError) {
   // Strip build metadata first (after +), then pre-release (after -)
   // Must handle + before - because build metadata can contain dashes

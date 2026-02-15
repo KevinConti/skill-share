@@ -1,0 +1,9 @@
+name: skill-with-deps
+description: A skill with dependencies
+version: 1.0.0
+dependencies:
+  - name: helper-skill
+    version: "^1.0.0"
+  - name: optional-skill
+    version: "*"
+    optional: true

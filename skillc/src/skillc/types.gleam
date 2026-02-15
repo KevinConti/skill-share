@@ -75,6 +75,7 @@ pub type ConfigField {
 
 pub type CompileWarning {
   FrontmatterInInstructions(file: String)
+  MissingDependency(dependency: Dependency)
 }
 
 pub type CompiledSkill {

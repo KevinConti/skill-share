@@ -15,7 +15,7 @@ import skillc/template
 import skillc/types.{
   type CompileWarning, type CompiledSkill, type FileCopy, type Provider,
   ClaudeCode, Codex, CompiledSkill, FileCopy, FrontmatterInInstructions,
-  OpenClaw,
+  MissingDependency, OpenClaw,
 }
 import skillc/yaml
 import yay
@@ -509,6 +509,48 @@ fn serialize_yaml_map(pairs: List(#(yay.Node, yay.Node)), indent: Int) -> String
       }
     })
   "\n" <> string.join(lines, "\n")
+}
+
+// ============================================================================
+// Dependency checking
+// ============================================================================
+
+pub fn check_dependencies(
+  skill: types.Skill,
+  output_dir: String,
+) -> List(CompileWarning) {
+  list.filter_map(skill.dependencies, fn(dep) {
+    case dep.optional {
+      True -> Error(Nil)
+      False -> {
+        case dependency_exists(dep.name, output_dir) {
+          True -> Error(Nil)
+          False -> Ok(MissingDependency(dep))
+        }
+      }
+    }
+  })
+}
+
+fn dependency_exists(dep_name: String, output_dir: String) -> Bool {
+  // Check if dep_name/SKILL.md exists in any provider subdirectory
+  case simplifile.read_directory(output_dir) {
+    Ok(entries) ->
+      list.any(entries, fn(provider_dir) {
+        let skill_md_path =
+          output_dir
+          <> "/"
+          <> provider_dir
+          <> "/"
+          <> dep_name
+          <> "/SKILL.md"
+        case simplifile.is_file(skill_md_path) {
+          Ok(True) -> True
+          _ -> False
+        }
+      })
+    Error(_) -> False
+  }
 }
 
 // ============================================================================

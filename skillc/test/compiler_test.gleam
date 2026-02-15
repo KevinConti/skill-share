@@ -6,6 +6,7 @@ import simplifile
 import skillc
 import skillc/compiler
 import skillc/error
+import skillc/parser
 import skillc/types
 
 // ============================================================================
@@ -733,6 +734,81 @@ pub fn compile_providers_invalid_provider_fails_test() {
 pub fn compile_providers_empty_list_fails_test() {
   let result = compiler.compile_providers("test/fixtures/valid-skill", [])
   should.be_error(result)
+}
+
+// ============================================================================
+// Dependency Validation
+// ============================================================================
+
+pub fn check_dependencies_missing_dep_warns_test() {
+  let assert Ok(skill_content) =
+    simplifile.read("test/fixtures/skill-with-deps/skill.yaml")
+  let assert Ok(_) = skillc.run(["check", "test/fixtures/skill-with-deps"])
+  // The skill has a non-optional dep "helper-skill" which doesn't exist in output
+  let assert Ok(parsed_skill) =
+    parser.parse_skill_yaml(skill_content)
+  let output_dir = "/tmp/skillc-test-dep-check"
+  let _ = simplifile.delete(output_dir)
+  let assert Ok(_) = simplifile.create_directory_all(output_dir)
+  let warnings = compiler.check_dependencies(parsed_skill, output_dir)
+  should.equal(list.length(warnings), 1)
+  let assert [types.MissingDependency(dep)] = warnings
+  should.equal(dep.name, "helper-skill")
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+pub fn check_dependencies_optional_not_warned_test() {
+  let assert Ok(skill_content) =
+    simplifile.read("test/fixtures/skill-with-deps/skill.yaml")
+  let assert Ok(skill) = parser.parse_skill_yaml(skill_content)
+  let output_dir = "/tmp/skillc-test-dep-optional"
+  let _ = simplifile.delete(output_dir)
+  let assert Ok(_) = simplifile.create_directory_all(output_dir)
+  // Only "helper-skill" (non-optional) should warn, not "optional-skill"
+  let warnings = compiler.check_dependencies(skill, output_dir)
+  let names = list.map(warnings, fn(w) {
+    case w {
+      types.MissingDependency(dep) -> dep.name
+      _ -> ""
+    }
+  })
+  should.be_false(list.contains(names, "optional-skill"))
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+pub fn check_dependencies_present_dep_no_warn_test() {
+  let assert Ok(skill_content) =
+    simplifile.read("test/fixtures/skill-with-deps/skill.yaml")
+  let assert Ok(skill) = parser.parse_skill_yaml(skill_content)
+  let output_dir = "/tmp/skillc-test-dep-present"
+  let _ = simplifile.delete(output_dir)
+  // Create the dependency structure
+  let dep_dir = output_dir <> "/openclaw/helper-skill"
+  let assert Ok(_) = simplifile.create_directory_all(dep_dir)
+  let assert Ok(_) =
+    simplifile.write(dep_dir <> "/SKILL.md", "---\nname: helper-skill\n---\n")
+  let warnings = compiler.check_dependencies(skill, output_dir)
+  should.equal(warnings, [])
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+pub fn compile_with_deps_shows_warning_test() {
+  let output_dir = "/tmp/skillc-test-compile-deps"
+  let _ = simplifile.delete(output_dir)
+  let assert Ok(output) =
+    skillc.run([
+      "compile",
+      "test/fixtures/skill-with-deps",
+      "--output",
+      output_dir,
+    ])
+  should.be_true(string.contains(output, "helper-skill"))
+  should.be_true(string.contains(output, "Warning"))
+  let _ = simplifile.delete(output_dir)
+  Nil
 }
 
 pub fn emit_openclaw_no_openai_yaml_test() {
