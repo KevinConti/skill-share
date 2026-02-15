@@ -1,13 +1,15 @@
-import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import skillc/error.{type SkillError, ParseError, ValidationError}
+import skillc/semver
 import skillc/types.{
-  type ConfigField, type Dependency, type Skill, type SkillMetadata, ConfigField,
-  Dependency, Skill, SkillMetadata,
+  type ConfigField, type Dependency, type Provider, type Skill,
+  type SkillMetadata, ConfigField, Dependency, Optional, OptionalWithDefault,
+  Required, Skill, SkillMetadata,
 }
+import skillc/version_constraint
 import yay
 
 pub fn parse_skill_yaml(content: String) -> Result(Skill, SkillError) {
@@ -33,30 +35,69 @@ fn parse_skill_from_node(node: yay.Node) -> Result(Skill, SkillError) {
       ValidationError("name", "Required field 'name' is missing")
     }),
   )
+  use _ <- result.try(case string.is_empty(string.trim(name)) {
+    True -> Error(ValidationError("name", "Field 'name' must not be empty"))
+    False -> Ok(Nil)
+  })
   use description <- result.try(
     yay.extract_string(node, "description")
     |> result.map_error(fn(_) {
       ValidationError("description", "Required field 'description' is missing")
     }),
   )
-  use version <- result.try(
+  use _ <- result.try(case string.is_empty(string.trim(description)) {
+    True ->
+      Error(ValidationError(
+        "description",
+        "Field 'description' must not be empty",
+      ))
+    False -> Ok(Nil)
+  })
+  use version_str <- result.try(
     yay.extract_string(node, "version")
     |> result.map_error(fn(_) {
       ValidationError("version", "Required field 'version' is missing")
     }),
   )
-  use _ <- result.try(validate_semver(version))
+  use version <- result.try(semver.parse(version_str))
 
   let license =
-    yay.extract_optional_string(node, "license") |> result.unwrap(None)
+    yay.extract_optional_string(node, "license")
+    |> result.unwrap(None)
+    |> normalize_optional
   let homepage =
-    yay.extract_optional_string(node, "homepage") |> result.unwrap(None)
+    yay.extract_optional_string(node, "homepage")
+    |> result.unwrap(None)
+    |> normalize_optional
   let repository =
-    yay.extract_optional_string(node, "repository") |> result.unwrap(None)
+    yay.extract_optional_string(node, "repository")
+    |> result.unwrap(None)
+    |> normalize_optional
 
   let metadata = parse_metadata(node)
   let dependencies = parse_dependencies(node)
+  // Check for self-dependency (circular reference to self)
+  use _ <- result.try(case list.find(dependencies, fn(d) { d.name == name }) {
+    Ok(_) ->
+      Error(ValidationError(
+        "dependencies",
+        "Skill cannot depend on itself: " <> name,
+      ))
+    Error(_) -> Ok(Nil)
+  })
+  use dependencies <- result.try(check_unique_names(
+    dependencies,
+    fn(d: Dependency) { d.name },
+    "dependencies",
+    "dependency",
+  ))
   let config = parse_config(node)
+  use config <- result.try(check_unique_names(
+    config,
+    fn(c: ConfigField) { c.name },
+    "config",
+    "config field",
+  ))
 
   Ok(Skill(
     name: name,
@@ -69,6 +110,13 @@ fn parse_skill_from_node(node: yay.Node) -> Result(Skill, SkillError) {
     dependencies: dependencies,
     config: config,
   ))
+}
+
+fn normalize_optional(opt: Option(String)) -> Option(String) {
+  case opt {
+    Some("") -> None
+    other -> other
+  }
 }
 
 fn parse_metadata(node: yay.Node) -> option.Option(SkillMetadata) {
@@ -95,12 +143,28 @@ fn parse_dependencies(node: yay.Node) -> List(Dependency) {
       list.filter_map(items, fn(item) {
         case yay.extract_string(item, "name") {
           Ok(name) -> {
-            let version =
-              yay.extract_string(item, "version") |> result.unwrap("*")
-            let optional =
-              yay.extract_bool_or(item, "optional", False)
-              |> result.unwrap(False)
-            Ok(Dependency(name: name, version: version, optional: optional))
+            case string.is_empty(string.trim(name)) {
+              True -> Error(Nil)
+              False -> {
+                let version_str =
+                  yay.extract_string(item, "version")
+                  |> result.unwrap("*")
+                case version_constraint.parse(version_str) {
+                  Ok(version) -> {
+                    let optional =
+                      yay.extract_bool_or(item, "optional", False)
+                      |> result.unwrap(False)
+                    Ok(Dependency(
+                      name: name,
+                      version: version,
+                      optional: optional,
+                    ))
+                  }
+                  // Skip dependencies with invalid version constraints
+                  Error(_) -> Error(Nil)
+                }
+              }
+            }
           }
           Error(_) -> Error(Nil)
         }
@@ -115,24 +179,36 @@ fn parse_config(node: yay.Node) -> List(ConfigField) {
       list.filter_map(items, fn(item) {
         case yay.extract_string(item, "name") {
           Ok(name) -> {
-            let description =
-              yay.extract_string(item, "description") |> result.unwrap("")
-            let required =
-              yay.extract_bool_or(item, "required", False)
-              |> result.unwrap(False)
-            let secret =
-              yay.extract_bool_or(item, "secret", False)
-              |> result.unwrap(False)
-            let default =
-              yay.extract_optional_string(item, "default")
-              |> result.unwrap(None)
-            Ok(ConfigField(
-              name: name,
-              description: description,
-              required: required,
-              secret: secret,
-              default: default,
-            ))
+            case string.is_empty(string.trim(name)) {
+              True -> Error(Nil)
+              False -> {
+                let description =
+                  yay.extract_string(item, "description") |> result.unwrap("")
+                let required =
+                  yay.extract_bool_or(item, "required", False)
+                  |> result.unwrap(False)
+                let secret =
+                  yay.extract_bool_or(item, "secret", False)
+                  |> result.unwrap(False)
+                let default =
+                  yay.extract_optional_string(item, "default")
+                  |> result.unwrap(None)
+                let requirement = case required {
+                  True -> Required
+                  False ->
+                    case default {
+                      Some(d) -> OptionalWithDefault(d)
+                      None -> Optional
+                    }
+                }
+                Ok(ConfigField(
+                  name: name,
+                  description: description,
+                  requirement: requirement,
+                  secret: secret,
+                ))
+              }
+            }
           }
           Error(_) -> Error(Nil)
         }
@@ -141,10 +217,45 @@ fn parse_config(node: yay.Node) -> List(ConfigField) {
   }
 }
 
+fn check_unique_names(
+  items: List(a),
+  get_name: fn(a) -> String,
+  field: String,
+  label: String,
+) -> Result(List(a), SkillError) {
+  do_check_unique_names(items, get_name, field, label, [])
+}
+
+fn do_check_unique_names(
+  items: List(a),
+  get_name: fn(a) -> String,
+  field: String,
+  label: String,
+  seen: List(String),
+) -> Result(List(a), SkillError) {
+  case items {
+    [] -> Ok(items)
+    [first, ..rest] -> {
+      let name = get_name(first)
+      case list.contains(seen, name) {
+        True ->
+          Error(ValidationError(field, "Duplicate " <> label <> ": " <> name))
+        False -> {
+          use _ <- result.try(
+            do_check_unique_names(rest, get_name, field, label, [name, ..seen]),
+          )
+          Ok(items)
+        }
+      }
+    }
+  }
+}
+
 pub fn parse_metadata_yaml(
   content: String,
-  provider_name: String,
+  provider: Provider,
 ) -> Result(yay.Node, SkillError) {
+  let provider_name = types.provider_to_string(provider)
   let file = "providers/" <> provider_name <> "/metadata.yaml"
   use docs <- result.try(
     yay.parse_string(content)
@@ -153,55 +264,6 @@ pub fn parse_metadata_yaml(
   case docs {
     [first, ..] -> Ok(yay.document_root(first))
     [] -> Error(ParseError(file, "Empty YAML document"))
-  }
-}
-
-pub fn validate_semver(version: String) -> Result(Nil, SkillError) {
-  // Strip build metadata first (after +), then pre-release (after -)
-  // Must handle + before - because build metadata can contain dashes
-  let without_build = case string.split_once(version, "+") {
-    Ok(#(before, after)) ->
-      case after {
-        "" -> return_semver_error(version)
-        _ -> Ok(before)
-      }
-    Error(_) -> Ok(version)
-  }
-  use without_build <- result.try(without_build)
-  let base_result = case string.split_once(without_build, "-") {
-    Ok(#(before, after)) ->
-      case after {
-        "" -> return_semver_error(version)
-        _ -> Ok(before)
-      }
-    Error(_) -> Ok(without_build)
-  }
-  use base <- result.try(base_result)
-  let parts = string.split(base, ".")
-  case parts {
-    [major, minor, patch] -> {
-      case
-        is_valid_semver_number(major),
-        is_valid_semver_number(minor),
-        is_valid_semver_number(patch)
-      {
-        True, True, True -> Ok(Nil)
-        _, _, _ -> return_semver_error(version)
-      }
-    }
-    _ -> return_semver_error(version)
-  }
-}
-
-fn return_semver_error(version: String) -> Result(a, SkillError) {
-  Error(ValidationError("version", "Invalid semver format: " <> version))
-}
-
-fn is_valid_semver_number(s: String) -> Bool {
-  case s {
-    "" -> False
-    "0" -> True
-    _ -> !string.starts_with(s, "0") && result.is_ok(int.parse(s))
   }
 }
 

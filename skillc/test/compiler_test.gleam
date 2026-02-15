@@ -1,4 +1,5 @@
 import gleam/list
+import gleam/option
 import gleam/string
 import gleeunit/should
 import simplifile
@@ -15,9 +16,9 @@ pub fn compile_all_providers_test() {
   let result = compiler.compile_all("test/fixtures/valid-skill")
   let assert Ok(compiled_list) = result
   let providers = list.map(compiled_list, fn(c) { c.provider })
-  should.be_true(list.contains(providers, "claude-code"))
-  should.be_true(list.contains(providers, "codex"))
-  should.be_true(list.contains(providers, "openclaw"))
+  should.be_true(list.contains(providers, types.ClaudeCode))
+  should.be_true(list.contains(providers, types.Codex))
+  should.be_true(list.contains(providers, types.OpenClaw))
 }
 
 pub fn compile_openclaw_produces_skill_md_test() {
@@ -51,21 +52,21 @@ pub fn compile_single_provider_openclaw_test() {
   let result = compiler.compile("test/fixtures/valid-skill", "openclaw")
   should.be_ok(result)
   let assert Ok(compiled) = result
-  should.equal(compiled.provider, "openclaw")
+  should.equal(compiled.provider, types.OpenClaw)
 }
 
 pub fn compile_single_provider_claude_code_test() {
   let result = compiler.compile("test/fixtures/valid-skill", "claude-code")
   should.be_ok(result)
   let assert Ok(compiled) = result
-  should.equal(compiled.provider, "claude-code")
+  should.equal(compiled.provider, types.ClaudeCode)
 }
 
 pub fn compile_single_provider_codex_test() {
   let result = compiler.compile("test/fixtures/valid-skill", "codex")
   should.be_ok(result)
   let assert Ok(compiled) = result
-  should.equal(compiled.provider, "codex")
+  should.equal(compiled.provider, types.Codex)
 }
 
 // ============================================================================
@@ -77,7 +78,7 @@ pub fn compile_single_target_from_multi_provider_test() {
   let result = compiler.compile("test/fixtures/valid-skill", "openclaw")
   should.be_ok(result)
   let assert Ok(compiled) = result
-  should.equal(compiled.provider, "openclaw")
+  should.equal(compiled.provider, types.OpenClaw)
 }
 
 pub fn compile_all_returns_all_providers_test() {
@@ -298,9 +299,7 @@ pub fn emit_codex_structure_test() {
 
   // Codex uses .agents/skills/ convention
   let assert Ok(content) =
-    simplifile.read(
-      output_dir <> "/codex/.agents/skills/test-skill/SKILL.md",
-    )
+    simplifile.read(output_dir <> "/codex/.agents/skills/test-skill/SKILL.md")
   should.be_true(string.contains(content, "test-skill"))
 
   let _ = simplifile.delete(output_dir)
@@ -338,8 +337,7 @@ pub fn compile_missing_instructions_fails_test() {
 
 pub fn compile_empty_instructions_succeeds_test() {
   // empty-instructions fixture has an empty INSTRUCTIONS.md — should compile
-  let result =
-    compiler.compile("test/fixtures/empty-instructions", "openclaw")
+  let result = compiler.compile("test/fixtures/empty-instructions", "openclaw")
   should.be_ok(result)
 }
 
@@ -362,7 +360,7 @@ pub fn compile_unsupported_provider_error_message_test() {
     compiler.compile("test/fixtures/valid-skill", "nonexistent-provider")
   let assert Error(error.ProviderError(provider, msg)) = result
   should.equal(provider, "nonexistent-provider")
-  should.be_true(string.contains(msg, "not supported"))
+  should.be_true(string.contains(msg, "Unknown provider"))
 }
 
 pub fn compile_missing_instructions_error_message_test() {
@@ -420,9 +418,7 @@ pub fn emit_roundtrip_codex_content_matches_test() {
   let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
 
   let assert Ok(read_back) =
-    simplifile.read(
-      output_dir <> "/codex/.agents/skills/test-skill/SKILL.md",
-    )
+    simplifile.read(output_dir <> "/codex/.agents/skills/test-skill/SKILL.md")
   should.equal(read_back, compiled.skill_md)
 
   let _ = simplifile.delete(output_dir)
@@ -439,16 +435,12 @@ pub fn emit_script_content_verified_test() {
 
   // The openclaw provider overrides common.sh — verify it's the provider version
   let assert Ok(content) =
-    simplifile.read(
-      output_dir <> "/openclaw/test-skill/scripts/common.sh",
-    )
+    simplifile.read(output_dir <> "/openclaw/test-skill/scripts/common.sh")
   should.be_true(string.contains(content, "openclaw override"))
 
   // shared.sh should be the shared version (not overridden)
   let assert Ok(shared_content) =
-    simplifile.read(
-      output_dir <> "/openclaw/test-skill/scripts/shared.sh",
-    )
+    simplifile.read(output_dir <> "/openclaw/test-skill/scripts/shared.sh")
   should.be_true(string.contains(shared_content, "shared script"))
 
   let _ = simplifile.delete(output_dir)
@@ -478,8 +470,7 @@ pub fn golden_claude_code_output_test() {
 pub fn golden_codex_output_test() {
   let assert Ok(compiled) =
     compiler.compile("test/fixtures/valid-skill", "codex")
-  let assert Ok(expected) =
-    simplifile.read("test/golden/valid-skill.codex.md")
+  let assert Ok(expected) = simplifile.read("test/golden/valid-skill.codex.md")
   should.equal(compiled.skill_md, expected)
 }
 
@@ -505,16 +496,14 @@ pub fn compile_hello_world_claude_code_test() {
 }
 
 pub fn compile_hello_world_codex_test() {
-  let assert Ok(compiled) =
-    compiler.compile("../examples/hello-world", "codex")
+  let assert Ok(compiled) = compiler.compile("../examples/hello-world", "codex")
   should.be_true(string.contains(compiled.skill_md, "hello-world v1.0.0"))
   should.be_false(string.contains(compiled.skill_md, "OpenClaw Notes"))
   should.be_false(string.contains(compiled.skill_md, "Claude Code Notes"))
 }
 
 pub fn compile_hello_world_all_providers_test() {
-  let assert Ok(compiled_list) =
-    compiler.compile_all("../examples/hello-world")
+  let assert Ok(compiled_list) = compiler.compile_all("../examples/hello-world")
   should.equal(list.length(compiled_list), 3)
 }
 
@@ -548,16 +537,13 @@ pub fn emit_with_scripts_test() {
 
   // Verify scripts were copied
   let skill_dir = output_dir <> "/openclaw/test-skill"
-  let assert Ok(True) =
-    simplifile.is_file(skill_dir <> "/scripts/common.sh")
-  let assert Ok(True) =
-    simplifile.is_file(skill_dir <> "/scripts/shared.sh")
+  let assert Ok(True) = simplifile.is_file(skill_dir <> "/scripts/common.sh")
+  let assert Ok(True) = simplifile.is_file(skill_dir <> "/scripts/shared.sh")
   let assert Ok(True) =
     simplifile.is_file(skill_dir <> "/scripts/openclaw-only.sh")
 
   // Verify assets were copied
-  let assert Ok(True) =
-    simplifile.is_file(skill_dir <> "/assets/template.md")
+  let assert Ok(True) = simplifile.is_file(skill_dir <> "/assets/template.md")
 
   let _ = simplifile.delete(output_dir)
   Nil
@@ -618,41 +604,26 @@ pub fn quote_yaml_string_with_newline_test() {
 // Group E: Compiler coverage
 // ============================================================================
 
-pub fn format_generic_output_test() {
-  // Compile an unknown provider — should use format_generic
-  let assert Ok(compiled) =
+pub fn unknown_provider_string_returns_error_test() {
+  // Compiling with an unknown provider string should fail at entry
+  let result =
     compiler.compile("test/fixtures/unknown-provider", "my-custom-provider")
-  // Generic format should have name, description, version in frontmatter
-  should.be_true(string.contains(compiled.skill_md, "---"))
-  should.be_true(string.contains(
-    compiled.skill_md,
-    "name: unknown-provider-test",
-  ))
-  should.be_true(string.contains(
-    compiled.skill_md,
-    "description: \"A skill with an unknown provider\"",
-  ))
-  should.be_true(string.contains(compiled.skill_md, "version: 1.0.0"))
+  should.be_error(result)
+  let assert Error(error.ProviderError(provider, msg)) = result
+  should.equal(provider, "my-custom-provider")
+  should.be_true(string.contains(msg, "Unknown provider"))
 }
 
-pub fn compile_all_with_unknown_provider_propagates_warnings_test() {
-  // After Bug 4 fix: discovery warnings about unknown providers
-  // should be propagated to compiled skills
+pub fn compile_all_unknown_provider_silently_skipped_test() {
+  // unknown-provider fixture has "my-custom-provider" and "openclaw"
+  // Only openclaw should be compiled (my-custom-provider silently skipped)
   let assert Ok(compiled_list) =
     compiler.compile_all("test/fixtures/unknown-provider")
-  // Should have compiled both providers
-  should.equal(list.length(compiled_list), 2)
-  // Each compiled skill should have the UnknownProviderWarning
-  let assert Ok(custom) =
-    list.find(compiled_list, fn(c) { c.provider == "my-custom-provider" })
-  let has_warning =
-    list.any(custom.warnings, fn(w) {
-      case w {
-        types.UnknownProviderWarning("my-custom-provider") -> True
-        _ -> False
-      }
-    })
-  should.be_true(has_warning)
+  should.equal(list.length(compiled_list), 1)
+  let assert [compiled] = compiled_list
+  should.equal(compiled.provider, types.OpenClaw)
+  // No warnings about unknown providers
+  should.equal(compiled.warnings, [])
 }
 
 pub fn provider_specific_assets_override_shared_test() {
@@ -679,5 +650,102 @@ pub fn has_frontmatter_with_leading_whitespace_integration_test() {
 
 pub fn version_function_returns_expected_value_test() {
   let v = skillc.version()
-  should.equal(v, "0.1.0")
+  should.equal(v, "1.0.0")
+}
+
+// ============================================================================
+// Codex agents/openai.yaml Generation
+// ============================================================================
+
+pub fn codex_compile_produces_codex_yaml_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "codex")
+  should.be_true(option.is_some(compiled.codex_yaml))
+  let assert option.Some(yaml) = compiled.codex_yaml
+  should.be_true(string.contains(yaml, "interface:"))
+  should.be_true(string.contains(yaml, "display_name:"))
+  should.be_true(string.contains(yaml, "policy:"))
+}
+
+pub fn openclaw_compile_no_codex_yaml_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  should.be_true(option.is_none(compiled.codex_yaml))
+}
+
+pub fn claude_code_compile_no_codex_yaml_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "claude-code")
+  should.be_true(option.is_none(compiled.codex_yaml))
+}
+
+pub fn emit_codex_generates_openai_yaml_test() {
+  let output_dir = "/tmp/skillc-test-codex-yaml"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "codex")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  let yaml_path =
+    output_dir <> "/codex/.agents/skills/test-skill/agents/openai.yaml"
+  let assert Ok(content) = simplifile.read(yaml_path)
+  should.be_true(string.contains(content, "interface:"))
+  should.be_true(string.contains(content, "display_name:"))
+  should.be_true(string.contains(content, "policy:"))
+
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+// ============================================================================
+// §3.3 Selective Multi-Provider Compilation (--providers flag)
+// ============================================================================
+
+pub fn compile_providers_single_test() {
+  let assert Ok(compiled_list) =
+    compiler.compile_providers("test/fixtures/valid-skill", ["openclaw"])
+  should.equal(list.length(compiled_list), 1)
+  let assert [compiled] = compiled_list
+  should.equal(compiled.provider, types.OpenClaw)
+}
+
+pub fn compile_providers_multiple_test() {
+  let assert Ok(compiled_list) =
+    compiler.compile_providers("test/fixtures/valid-skill", [
+      "openclaw", "codex",
+    ])
+  should.equal(list.length(compiled_list), 2)
+  let providers = list.map(compiled_list, fn(c) { c.provider })
+  should.be_true(list.contains(providers, types.OpenClaw))
+  should.be_true(list.contains(providers, types.Codex))
+}
+
+pub fn compile_providers_invalid_provider_fails_test() {
+  let result =
+    compiler.compile_providers("test/fixtures/valid-skill", [
+      "openclaw", "invalid",
+    ])
+  should.be_error(result)
+  let assert Error(error.ProviderError("invalid", _)) = result
+}
+
+pub fn compile_providers_empty_list_fails_test() {
+  let result = compiler.compile_providers("test/fixtures/valid-skill", [])
+  should.be_error(result)
+}
+
+pub fn emit_openclaw_no_openai_yaml_test() {
+  let output_dir = "/tmp/skillc-test-no-codex-yaml"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  let yaml_path = output_dir <> "/openclaw/test-skill/agents/openai.yaml"
+  should.be_true(simplifile.is_file(yaml_path) != Ok(True))
+
+  let _ = simplifile.delete(output_dir)
+  Nil
 }

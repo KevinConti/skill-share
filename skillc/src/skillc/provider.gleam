@@ -3,20 +3,11 @@ import gleam/result
 import gleam/string
 import simplifile
 import skillc/error.{type SkillError, FileError, ProviderError}
-
-const known_providers = ["openclaw", "claude-code", "codex"]
-
-pub type ProviderWarning {
-  UnknownProvider(name: String)
-}
-
-pub type DiscoveryResult {
-  DiscoveryResult(providers: List(String), warnings: List(ProviderWarning))
-}
+import skillc/types.{type Provider}
 
 pub fn discover_providers(
   skill_dir: String,
-) -> Result(DiscoveryResult, SkillError) {
+) -> Result(List(Provider), SkillError) {
   let providers_dir = skill_dir <> "/providers"
   case simplifile.is_directory(providers_dir) {
     Ok(True) -> {
@@ -33,23 +24,18 @@ pub fn discover_providers(
           }
         })
         |> list.sort(string.compare)
-      let warnings =
-        list.filter_map(providers, fn(p) {
-          case list.contains(known_providers, p) {
-            True -> Error(Nil)
-            False -> Ok(UnknownProvider(p))
-          }
-        })
-      Ok(DiscoveryResult(providers: providers, warnings: warnings))
+        |> list.filter_map(types.provider_from_string)
+      Ok(providers)
     }
-    Ok(False) -> Ok(DiscoveryResult(providers: [], warnings: []))
-    Error(_) -> Ok(DiscoveryResult(providers: [], warnings: []))
+    Ok(False) -> Ok([])
+    Error(_) -> Ok([])
   }
 }
 
-pub fn is_supported(skill_dir: String, provider: String) -> Bool {
+pub fn is_supported(skill_dir: String, provider: Provider) -> Bool {
+  let provider_name = types.provider_to_string(provider)
   let metadata_path =
-    skill_dir <> "/providers/" <> provider <> "/metadata.yaml"
+    skill_dir <> "/providers/" <> provider_name <> "/metadata.yaml"
   case simplifile.is_file(metadata_path) {
     Ok(True) -> True
     _ -> False
@@ -58,14 +44,15 @@ pub fn is_supported(skill_dir: String, provider: String) -> Bool {
 
 pub fn validate_provider(
   skill_dir: String,
-  provider: String,
+  provider: Provider,
 ) -> Result(Nil, SkillError) {
+  let provider_name = types.provider_to_string(provider)
   case is_supported(skill_dir, provider) {
     True -> Ok(Nil)
     False ->
       Error(ProviderError(
-        provider,
-        "Provider '" <> provider <> "' is not supported by this skill",
+        provider_name,
+        "Provider '" <> provider_name <> "' is not supported by this skill",
       ))
   }
 }

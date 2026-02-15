@@ -3,21 +3,57 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
 import gleam/string
 import simplifile
 import skillc/error.{type SkillError, ProviderError, map_file_error}
+import skillc/fs
 import skillc/parser
 import skillc/provider
+import skillc/semver
 import skillc/template
 import skillc/types.{
-  type CompileWarning, type CompiledSkill, type FileCopy, CompiledSkill,
-  FileCopy, FrontmatterInInstructions,
+  type CompileWarning, type CompiledSkill, type FileCopy, type Provider,
+  ClaudeCode, Codex, CompiledSkill, FileCopy, FrontmatterInInstructions,
+  OpenClaw,
 }
+import skillc/yaml
 import yay
+
+type FrontmatterData {
+  FrontmatterData(lines: List(String), extra_pairs: List(#(yay.Node, yay.Node)))
+}
+
+type FileCategory {
+  Scripts
+  Assets
+}
+
+fn file_category_to_string(category: FileCategory) -> String {
+  case category {
+    Scripts -> "scripts"
+    Assets -> "assets"
+  }
+}
 
 pub fn compile(
   skill_dir: String,
-  target: String,
+  provider_name: String,
+) -> Result(CompiledSkill, SkillError) {
+  use provider <- result.try(case types.provider_from_string(provider_name) {
+    Ok(p) -> Ok(p)
+    Error(_) ->
+      Error(ProviderError(
+        provider_name,
+        "Unknown provider '" <> provider_name <> "'",
+      ))
+  })
+  compile_single(skill_dir, provider)
+}
+
+fn compile_single(
+  skill_dir: String,
+  provider: Provider,
 ) -> Result(CompiledSkill, SkillError) {
   // 1. Parse skill.yaml
   use skill_content <- result.try(
@@ -26,27 +62,39 @@ pub fn compile(
   )
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
 
-  // 2. Verify target is supported
-  use _ <- result.try(provider.validate_provider(skill_dir, target))
+  // 2. Read INSTRUCTIONS.md
+  use instructions_content <- result.try(
+    simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
+    |> map_file_error(skill_dir <> "/INSTRUCTIONS.md"),
+  )
 
-  // 3. Parse provider metadata
-  let metadata_path = skill_dir <> "/providers/" <> target <> "/metadata.yaml"
+  compile_for_provider(skill_dir, provider, skill, instructions_content)
+}
+
+fn compile_for_provider(
+  skill_dir: String,
+  provider: Provider,
+  skill: types.Skill,
+  instructions_content: String,
+) -> Result(CompiledSkill, SkillError) {
+  let provider_str = types.provider_to_string(provider)
+
+  // 1. Verify provider is supported
+  use _ <- result.try(provider.validate_provider(skill_dir, provider))
+
+  // 2. Parse provider metadata
+  let metadata_path =
+    skill_dir <> "/providers/" <> provider_str <> "/metadata.yaml"
   use meta_content <- result.try(
     simplifile.read(metadata_path)
     |> map_file_error(metadata_path),
   )
   use provider_meta <- result.try(parser.parse_metadata_yaml(
     meta_content,
-    target,
+    provider,
   ))
 
-  // 4. Read INSTRUCTIONS.md
-  use instructions_content <- result.try(
-    simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
-    |> map_file_error(skill_dir <> "/INSTRUCTIONS.md"),
-  )
-
-  // 4b. Check for frontmatter in INSTRUCTIONS.md (generates warning)
+  // 3. Check for frontmatter in INSTRUCTIONS.md (generates warning)
   let warnings: List(CompileWarning) = case
     parser.has_frontmatter(instructions_content)
   {
@@ -54,23 +102,23 @@ pub fn compile(
     False -> []
   }
 
-  // 5-6. Render INSTRUCTIONS.md through template engine
+  // 4. Render INSTRUCTIONS.md through template engine
   use rendered_instructions <- result.try(template.render_template(
     instructions_content,
-    target,
+    provider,
     skill,
     provider_meta,
   ))
 
-  // 7. If provider-specific instructions.md exists, render and append
+  // 5. If provider-specific instructions.md exists, render and append
   let provider_instructions_path =
-    skill_dir <> "/providers/" <> target <> "/instructions.md"
+    skill_dir <> "/providers/" <> provider_str <> "/instructions.md"
   use rendered_instructions <- result.try(
     case simplifile.read(provider_instructions_path) {
       Ok(provider_content) -> {
         use rendered_provider <- result.try(template.render_template(
           provider_content,
-          target,
+          provider,
           skill,
           provider_meta,
         ))
@@ -80,51 +128,87 @@ pub fn compile(
     },
   )
 
-  // 8-9. Format output for target provider
+  // 6. Format output for provider
   let skill_md =
-    format_skill_md(skill, target, provider_meta, rendered_instructions)
+    format_skill_md(skill, provider, provider_meta, rendered_instructions)
 
-  // 10. Collect scripts
-  let scripts = collect_files(skill_dir, target, "scripts")
-  let assets = collect_files(skill_dir, target, "assets")
+  // 7. Collect scripts and assets
+  let scripts = collect_files(skill_dir, provider_str, Scripts)
+  let assets = collect_files(skill_dir, provider_str, Assets)
+
+  // 8. Generate agents/openai.yaml for Codex
+  let codex_yaml = case provider {
+    Codex -> Some(generate_codex_yaml(provider_meta))
+    _ -> None
+  }
 
   Ok(CompiledSkill(
-    provider: target,
+    provider: provider,
     skill_md: skill_md,
     scripts: scripts,
     assets: assets,
     warnings: warnings,
+    codex_yaml: codex_yaml,
   ))
 }
 
 pub fn compile_all(skill_dir: String) -> Result(List(CompiledSkill), SkillError) {
-  use discovery <- result.try(provider.discover_providers(skill_dir))
-  case discovery.providers {
+  use providers <- result.try(provider.discover_providers(skill_dir))
+  case providers {
     [] ->
       Error(ProviderError(
         "none",
         "No supported providers found in " <> skill_dir,
       ))
-    providers -> {
-      let discovery_warnings =
-        list.map(discovery.warnings, fn(w) {
-          case w {
-            provider.UnknownProvider(name) -> types.UnknownProviderWarning(name)
-          }
-        })
-      use compiled_list <- result.try(
-        list.try_map(providers, fn(p) { compile(skill_dir, p) }),
+    _ -> {
+      use #(skill, instructions_content) <- result.try(
+        read_shared_inputs(skill_dir),
       )
-      Ok(
-        list.map(compiled_list, fn(c) {
-          CompiledSkill(
-            ..c,
-            warnings: list.append(discovery_warnings, c.warnings),
-          )
-        }),
-      )
+      list.try_map(providers, fn(p) {
+        compile_for_provider(skill_dir, p, skill, instructions_content)
+      })
     }
   }
+}
+
+pub fn compile_providers(
+  skill_dir: String,
+  providers: List(String),
+) -> Result(List(CompiledSkill), SkillError) {
+  use parsed_providers <- result.try(
+    list.try_map(providers, fn(p) {
+      case types.provider_from_string(p) {
+        Ok(provider) -> Ok(provider)
+        Error(_) -> Error(ProviderError(p, "Unknown provider '" <> p <> "'"))
+      }
+    }),
+  )
+  case parsed_providers {
+    [] -> Error(ProviderError("none", "No providers specified"))
+    _ -> {
+      use #(skill, instructions_content) <- result.try(
+        read_shared_inputs(skill_dir),
+      )
+      list.try_map(parsed_providers, fn(p) {
+        compile_for_provider(skill_dir, p, skill, instructions_content)
+      })
+    }
+  }
+}
+
+fn read_shared_inputs(
+  skill_dir: String,
+) -> Result(#(types.Skill, String), SkillError) {
+  use skill_content <- result.try(
+    simplifile.read(skill_dir <> "/skill.yaml")
+    |> map_file_error(skill_dir <> "/skill.yaml"),
+  )
+  use skill <- result.try(parser.parse_skill_yaml(skill_content))
+  use instructions_content <- result.try(
+    simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
+    |> map_file_error(skill_dir <> "/INSTRUCTIONS.md"),
+  )
+  Ok(#(skill, instructions_content))
 }
 
 pub fn emit(
@@ -132,9 +216,11 @@ pub fn emit(
   output_dir: String,
   skill_name: String,
 ) -> Result(Nil, SkillError) {
+  let provider_str = types.provider_to_string(compiled.provider)
   let provider_dir = case compiled.provider {
-    "codex" -> output_dir <> "/codex/.agents/skills/" <> skill_name
-    provider -> output_dir <> "/" <> provider <> "/" <> skill_name
+    Codex -> output_dir <> "/codex/.agents/skills/" <> skill_name
+    OpenClaw -> output_dir <> "/" <> provider_str <> "/" <> skill_name
+    ClaudeCode -> output_dir <> "/" <> provider_str <> "/" <> skill_name
   }
 
   use _ <- result.try(
@@ -148,28 +234,30 @@ pub fn emit(
     |> map_file_error(provider_dir <> "/SKILL.md"),
   )
 
-  // Copy scripts
-  use _ <- result.try(copy_file_list(
-    compiled.scripts,
-    provider_dir <> "/scripts",
-  ))
-
-  // Copy assets
-  use _ <- result.try(copy_file_list(compiled.assets, provider_dir <> "/assets"))
-
-  // For codex: generate agents/openai.yaml
-  case compiled.provider {
-    "codex" -> {
+  // Write agents/openai.yaml if present (Codex only)
+  use _ <- result.try(case compiled.codex_yaml {
+    Some(yaml_content) -> {
       let agents_dir = provider_dir <> "/agents"
       use _ <- result.try(
         simplifile.create_directory_all(agents_dir)
         |> map_file_error(agents_dir),
       )
-      // openai.yaml is generated from provider metadata - for now emit a placeholder
-      Ok(Nil)
+      simplifile.write(agents_dir <> "/openai.yaml", yaml_content)
+      |> map_file_error(agents_dir <> "/openai.yaml")
     }
-    _ -> Ok(Nil)
-  }
+    None -> Ok(Nil)
+  })
+
+  // Copy scripts
+  use _ <- result.try(fs.copy_file_list(
+    compiled.scripts,
+    provider_dir <> "/scripts",
+  ))
+
+  // Copy assets
+  use _ <- result.try(fs.copy_file_list(compiled.assets, provider_dir <> "/assets"))
+
+  Ok(Nil)
 }
 
 // ============================================================================
@@ -178,14 +266,14 @@ pub fn emit(
 
 fn format_skill_md(
   skill: types.Skill,
-  target: String,
+  provider: Provider,
   provider_meta: yay.Node,
   body: String,
 ) -> String {
-  case target {
-    "openclaw" -> format_openclaw(skill, provider_meta, body)
-    "claude-code" -> format_claude_code(skill, provider_meta, body)
-    _ -> format_generic(skill, body)
+  case provider {
+    OpenClaw -> format_openclaw(skill, provider_meta, body)
+    ClaudeCode -> format_claude_code(skill, provider_meta, body)
+    Codex -> format_codex(skill, body)
   }
 }
 
@@ -194,18 +282,19 @@ fn format_skill_md(
 fn build_base_frontmatter(
   skill: types.Skill,
   provider_meta: yay.Node,
-) -> #(List(String), List(#(yay.Node, yay.Node))) {
+) -> FrontmatterData {
   let universal_keys = ["name", "description", "version"]
 
+  let version_str = semver.to_string(skill.version)
   let name = meta_string_or(provider_meta, "name", skill.name)
   let description =
     meta_string_or(provider_meta, "description", skill.description)
-  let version = meta_string_or(provider_meta, "version", skill.version)
+  let version = meta_string_or(provider_meta, "version", version_str)
 
-  let base_lines = [
+  let lines = [
     "---",
-    "name: " <> quote_yaml_string(name),
-    "description: " <> quote_yaml_string(description),
+    "name: " <> yaml.quote_string(name),
+    "description: " <> yaml.quote_string(description),
     "version: " <> version,
   ]
 
@@ -220,7 +309,7 @@ fn build_base_frontmatter(
     _ -> []
   }
 
-  #(base_lines, extra_pairs)
+  FrontmatterData(lines: lines, extra_pairs: extra_pairs)
 }
 
 fn format_openclaw(
@@ -228,7 +317,8 @@ fn format_openclaw(
   provider_meta: yay.Node,
   body: String,
 ) -> String {
-  let #(base_lines, extra_pairs) = build_base_frontmatter(skill, provider_meta)
+  let FrontmatterData(lines: base_lines, extra_pairs: extra_pairs) =
+    build_base_frontmatter(skill, provider_meta)
 
   let frontmatter_lines = case skill.license {
     Some(l) -> list.append(base_lines, ["license: " <> l])
@@ -265,7 +355,7 @@ fn format_claude_code(
   provider_meta: yay.Node,
   body: String,
 ) -> String {
-  let #(frontmatter_lines, extra_pairs) =
+  let FrontmatterData(lines: frontmatter_lines, extra_pairs: extra_pairs) =
     build_base_frontmatter(skill, provider_meta)
 
   let meta_lines =
@@ -287,16 +377,39 @@ fn format_claude_code(
   string.join(all_lines, "\n") <> "\n\n" <> body
 }
 
-fn format_generic(skill: types.Skill, body: String) -> String {
+fn format_codex(skill: types.Skill, body: String) -> String {
+  let version_str = semver.to_string(skill.version)
   let frontmatter_lines = [
     "---",
-    "name: " <> quote_yaml_string(skill.name),
-    "description: " <> quote_yaml_string(skill.description),
-    "version: " <> skill.version,
+    "name: " <> yaml.quote_string(skill.name),
+    "description: " <> yaml.quote_string(skill.description),
+    "version: " <> version_str,
     "---",
   ]
 
   string.join(frontmatter_lines, "\n") <> "\n\n" <> body
+}
+
+fn generate_codex_yaml(provider_meta: yay.Node) -> String {
+  case provider_meta {
+    yay.NodeMap(pairs) -> {
+      let lines =
+        list.filter_map(pairs, fn(pair) {
+          case pair {
+            #(yay.NodeStr(key), value) -> {
+              let val = node_to_yaml_value(value, 2)
+              case string.starts_with(val, "\n") {
+                True -> Ok(key <> ":" <> val)
+                False -> Ok(key <> ": " <> val)
+              }
+            }
+            _ -> Error(Nil)
+          }
+        })
+      string.join(lines, "\n") <> "\n"
+    }
+    _ -> ""
+  }
 }
 
 fn meta_string_or(meta: yay.Node, key: String, default: String) -> String {
@@ -308,7 +421,7 @@ fn meta_string_or(meta: yay.Node, key: String, default: String) -> String {
 
 fn node_to_yaml_value(node: yay.Node, indent: Int) -> String {
   case node {
-    yay.NodeStr(s) -> quote_yaml_string(s)
+    yay.NodeStr(s) -> yaml.quote_string(s)
     yay.NodeInt(i) -> int.to_string(i)
     yay.NodeFloat(f) -> float.to_string(f)
     yay.NodeBool(True) -> "true"
@@ -398,42 +511,18 @@ fn serialize_yaml_map(pairs: List(#(yay.Node, yay.Node)), indent: Int) -> String
   "\n" <> string.join(lines, "\n")
 }
 
-const yaml_special_chars = [
-  ":", "#", " ", "\"", "'", "[", "]", "{", "}", ",", "&", "*", "!", "|", ">",
-  "%", "@", "\n",
-]
-
-const yaml_reserved_words = [
-  "true", "false", "yes", "no", "on", "off", "null", "~", "",
-]
-
-fn quote_yaml_string(s: String) -> String {
-  let needs_quoting =
-    list.any(yaml_special_chars, fn(c) { string.contains(s, c) })
-    || list.contains(yaml_reserved_words, s)
-  case needs_quoting {
-    True -> {
-      // Escape backslashes first, then double quotes, then newlines
-      let escaped = string.replace(s, "\\", "\\\\")
-      let escaped = string.replace(escaped, "\"", "\\\"")
-      let escaped = string.replace(escaped, "\n", "\\n")
-      "\"" <> escaped <> "\""
-    }
-    False -> s
-  }
-}
-
 // ============================================================================
 // File merging
 // ============================================================================
 
 fn collect_files(
   skill_dir: String,
-  target: String,
-  dir_type: String,
+  provider_str: String,
+  category: FileCategory,
 ) -> List(FileCopy) {
-  let shared_dir = skill_dir <> "/" <> dir_type
-  let provider_dir = skill_dir <> "/providers/" <> target <> "/" <> dir_type
+  let dir_name = file_category_to_string(category)
+  let shared_dir = skill_dir <> "/" <> dir_name
+  let provider_dir = skill_dir <> "/providers/" <> provider_str <> "/" <> dir_name
 
   let shared_files = case simplifile.get_files(shared_dir) {
     Ok(files) ->
@@ -461,43 +550,11 @@ fn merge_file_lists(
   shared: List(FileCopy),
   provider: List(FileCopy),
 ) -> List(FileCopy) {
-  let provider_paths = list.map(provider, fn(f) { f.relative_path })
+  let provider_paths =
+    set.from_list(list.map(provider, fn(f) { f.relative_path }))
   let filtered_shared =
-    list.filter(shared, fn(f) {
-      !list.contains(provider_paths, f.relative_path)
-    })
+    list.filter(shared, fn(f) { !set.contains(provider_paths, f.relative_path) })
   list.append(filtered_shared, provider)
 }
 
-fn copy_file_list(
-  files: List(FileCopy),
-  dest_dir: String,
-) -> Result(Nil, SkillError) {
-  case files {
-    [] -> Ok(Nil)
-    _ -> {
-      use _ <- result.try(
-        simplifile.create_directory_all(dest_dir)
-        |> map_file_error(dest_dir),
-      )
-      list.try_each(files, fn(f) {
-        let dest = dest_dir <> "/" <> f.relative_path
-        // Ensure parent directory exists
-        let parent = get_parent_dir(dest)
-        use _ <- result.try(
-          simplifile.create_directory_all(parent)
-          |> map_file_error(parent),
-        )
-        simplifile.copy_file(f.src, dest)
-        |> map_file_error(f.src)
-      })
-    }
-  }
-}
 
-fn get_parent_dir(path: String) -> String {
-  case string.split(path, "/") |> list.reverse() {
-    [_, ..rest] if rest != [] -> string.join(list.reverse(rest), "/")
-    _ -> "."
-  }
-}

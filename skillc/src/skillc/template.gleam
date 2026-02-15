@@ -5,10 +5,22 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import skillc/error.{type SkillError, TemplateError}
-import skillc/types.{type Skill}
+import skillc/semver
+import skillc/types.{
+  type Provider, type Skill, Optional, OptionalWithDefault, Required,
+}
+import skillc/version_constraint
 import yay
 
 const escaped_brace_placeholder = "___ESCAPED_OPEN_BRACE___"
+
+const key_index = "@index"
+
+const key_first = "@first"
+
+const key_last = "@last"
+
+const key_this = "this"
 
 // ============================================================================
 // Public API
@@ -16,11 +28,12 @@ const escaped_brace_placeholder = "___ESCAPED_OPEN_BRACE___"
 
 pub fn render_template(
   content: String,
-  target: String,
+  target: Provider,
   skill: Skill,
   provider_meta: yay.Node,
 ) -> Result(String, SkillError) {
-  use processed <- result.try(process_provider_blocks(content, target))
+  let target_str = types.provider_to_string(target)
+  use processed <- result.try(process_provider_blocks(content, target_str))
   let context = build_context(skill, target, provider_meta)
   render(processed, context)
 }
@@ -47,27 +60,19 @@ pub fn process_provider_blocks(
   content: String,
   target: String,
 ) -> Result(String, SkillError) {
-  do_process_provider_blocks(content, target, "", content)
+  do_process_provider_blocks(content, target, "", 1)
 }
 
 fn do_process_provider_blocks(
   remaining: String,
   target: String,
   acc: String,
-  original: String,
+  line: Int,
 ) -> Result(String, SkillError) {
   case string.split_once(remaining, "{{#provider ") {
     Error(_) -> Ok(acc <> remaining)
     Ok(#(before, after_open)) -> {
-      // Line number in original source at the opening tag
-      let error_line =
-        line_at(string.slice(
-          original,
-          0,
-          string.length(original)
-            - string.length(remaining)
-            + string.length(before),
-        ))
+      let error_line = line + count_newlines(before)
       use #(providers, after_tag) <- result.try(
         parse_provider_tag(after_open)
         |> result.replace_error(TemplateError(
@@ -85,13 +90,11 @@ fn do_process_provider_blocks(
       let should_include = list.contains(providers, target)
       let new_acc = case should_include {
         True ->
-          acc
-          <> before
-          <> strip_surrounding_newlines(block_content)
-          <> "\n"
+          acc <> before <> strip_surrounding_newlines(block_content) <> "\n"
         False -> acc <> strip_trailing_newlines(before)
       }
-      do_process_provider_blocks(after_close, target, new_acc, original)
+      let new_line = error_line + count_newlines(block_content)
+      do_process_provider_blocks(after_close, target, new_acc, new_line)
     }
   }
 }
@@ -190,8 +193,8 @@ fn render(content: String, context: Value) -> Result(String, SkillError) {
   let content = process_raw_blocks(content, "")
   // Pre-process backslash escapes
   let content = string.replace(content, "\\{{", escaped_brace_placeholder)
-  // Render template (pass content as original for line number tracking)
-  use output <- result.try(render_tokens(content, context, content))
+  // Render template with line counter starting at 1
+  use #(output, _) <- result.try(render_tokens(content, context, 1))
   // Post-process: restore escaped braces
   let output = string.replace(output, escaped_brace_placeholder, "{{")
   Ok(output)
@@ -216,34 +219,27 @@ fn process_raw_blocks(content: String, acc: String) -> String {
 fn render_tokens(
   content: String,
   ctx: Value,
-  original: String,
-) -> Result(String, SkillError) {
-  do_render(content, ctx, "", original)
+  line: Int,
+) -> Result(#(String, Int), SkillError) {
+  do_render(content, ctx, "", line)
 }
 
 fn do_render(
   remaining: String,
   ctx: Value,
   acc: String,
-  original: String,
-) -> Result(String, SkillError) {
+  line: Int,
+) -> Result(#(String, Int), SkillError) {
   case string.split_once(remaining, "{{") {
-    Error(_) -> Ok(acc <> remaining)
+    Error(_) -> Ok(#(acc <> remaining, line + count_newlines(remaining)))
     Ok(#(before, after_open)) -> {
-      // Compute line in original source from position of remaining
-      let source_line =
-        line_at(string.slice(
-          original,
-          0,
-          string.length(original)
-            - string.length(remaining)
-            + string.length(before),
-        ))
+      let source_line = line + count_newlines(before)
       case string.split_once(after_open, "}}") {
         Error(_) ->
           Error(TemplateError(source_line, "Unbalanced tag: missing closing }}"))
         Ok(#(tag_body, after_close)) -> {
           let tag = string.trim(tag_body)
+          let after_tag_line = source_line + count_newlines(tag_body)
           case tag {
             // Block helpers
             "#if " <> path -> {
@@ -262,7 +258,7 @@ fn do_render(
                 before,
                 ctx,
                 acc,
-                original,
+                after_tag_line,
               )
             }
             "#unless " <> path -> {
@@ -281,7 +277,7 @@ fn do_render(
                 before,
                 ctx,
                 acc,
-                original,
+                after_tag_line,
               )
             }
             "#each " <> path -> {
@@ -295,30 +291,41 @@ fn do_render(
               case value {
                 VList(items) -> {
                   let len = list.length(items)
-                  use rendered_items <- result.try(render_each_items(
+                  use #(rendered_items, _) <- result.try(render_each_items(
                     block_content,
                     items,
                     ctx,
                     0,
                     len,
                     "",
-                    original,
+                    after_tag_line,
                   ))
                   do_render(
                     rest,
                     ctx,
                     acc <> before <> rendered_items,
-                    original,
+                    after_tag_line + count_newlines(block_content),
                   )
                 }
-                _ -> do_render(rest, ctx, acc <> before, original)
+                _ ->
+                  do_render(
+                    rest,
+                    ctx,
+                    acc <> before,
+                    after_tag_line + count_newlines(block_content),
+                  )
               }
             }
             // Variable interpolation
             _ -> {
               let value = resolve_path(tag, ctx)
               let str_value = value_to_string(value)
-              do_render(after_close, ctx, acc <> before <> str_value, original)
+              do_render(
+                after_close,
+                ctx,
+                acc <> before <> str_value,
+                after_tag_line,
+              )
             }
           }
         }
@@ -335,18 +342,23 @@ fn render_conditional_block(
   before: String,
   ctx: Value,
   acc: String,
-  original: String,
-) -> Result(String, SkillError) {
+  line: Int,
+) -> Result(#(String, Int), SkillError) {
   let should_render = case invert {
     True -> !is_truthy_result
     False -> is_truthy_result
   }
+  let after_block_line = line + count_newlines(block_content)
   case should_render {
     True -> {
-      use rendered_block <- result.try(render_tokens(block_content, ctx, original))
-      do_render(rest, ctx, acc <> before <> rendered_block, original)
+      use #(rendered_block, _) <- result.try(render_tokens(
+        block_content,
+        ctx,
+        line,
+      ))
+      do_render(rest, ctx, acc <> before <> rendered_block, after_block_line)
     }
-    False -> do_render(rest, ctx, acc <> before, original)
+    False -> do_render(rest, ctx, acc <> before, after_block_line)
   }
 }
 
@@ -357,18 +369,18 @@ fn render_each_items(
   index: Int,
   total: Int,
   acc: String,
-  original: String,
-) -> Result(String, SkillError) {
+  line: Int,
+) -> Result(#(String, Int), SkillError) {
   case items {
-    [] -> Ok(acc)
+    [] -> Ok(#(acc, line))
     [item, ..rest] -> {
       // Build context: parent props (fallback), then item props + specials (priority)
       let is_last = index == total - 1
       let is_first = index == 0
       let special_keys = [
-        #("@index", VInt(index)),
-        #("@first", VBool(is_first)),
-        #("@last", VBool(is_last)),
+        #(key_index, VInt(index)),
+        #(key_first, VBool(is_first)),
+        #(key_last, VBool(is_last)),
       ]
       let parent_props = case parent_ctx {
         VDict(props) -> props
@@ -376,12 +388,15 @@ fn render_each_items(
       }
       // Item-specific keys come first (higher priority in list.find lookup)
       let item_keys = case item {
-        VDict(props) ->
-          [#("this", item), ..list.append(props, special_keys)]
-        _ -> [#("this", item), ..special_keys]
+        VDict(props) -> [#(key_this, item), ..list.append(props, special_keys)]
+        _ -> [#(key_this, item), ..special_keys]
       }
       let item_ctx = VDict(list.append(item_keys, parent_props))
-      use rendered <- result.try(render_tokens(template, item_ctx, original))
+      use #(rendered, new_line) <- result.try(render_tokens(
+        template,
+        item_ctx,
+        line,
+      ))
       render_each_items(
         template,
         rest,
@@ -389,7 +404,7 @@ fn render_each_items(
         index + 1,
         total,
         acc <> rendered,
-        original,
+        new_line,
       )
     }
   }
@@ -482,22 +497,9 @@ fn do_find_block_end(
 }
 
 fn find_position(haystack: String, needle: String) -> Option(Int) {
-  do_find_position(haystack, needle, 0)
-}
-
-fn do_find_position(
-  haystack: String,
-  needle: String,
-  pos: Int,
-) -> Option(Int) {
-  case string.starts_with(haystack, needle) {
-    True -> Some(pos)
-    False -> {
-      case string.pop_grapheme(haystack) {
-        Ok(#(_, rest)) -> do_find_position(rest, needle, pos + 1)
-        Error(_) -> None
-      }
-    }
+  case string.split_once(haystack, needle) {
+    Ok(#(before, _)) -> Some(string.length(before))
+    Error(_) -> None
   }
 }
 
@@ -513,13 +515,13 @@ fn resolve_path(path: String, ctx: Value) -> Value {
 fn resolve_parts(parts: List(String), ctx: Value) -> Value {
   case parts {
     [] -> ctx
-    ["this", ..rest] -> {
+    [part, ..rest] if part == key_this -> {
       let this_val = resolve_this(ctx)
       resolve_parts(rest, this_val)
     }
-    ["@index"] -> lookup_key("@index", ctx)
-    ["@first"] -> lookup_key("@first", ctx)
-    ["@last"] -> lookup_key("@last", ctx)
+    [part] if part == key_index -> lookup_key(key_index, ctx)
+    [part] if part == key_first -> lookup_key(key_first, ctx)
+    [part] if part == key_last -> lookup_key(key_last, ctx)
     [key, ..rest] -> {
       let value = lookup_key(key, ctx)
       case rest {
@@ -531,7 +533,7 @@ fn resolve_parts(parts: List(String), ctx: Value) -> Value {
 }
 
 fn resolve_this(ctx: Value) -> Value {
-  case lookup_key("this", ctx) {
+  case lookup_key(key_this, ctx) {
     VNil -> ctx
     value -> value
   }
@@ -552,8 +554,15 @@ fn lookup_key(key: String, ctx: Value) -> Value {
 // Value helpers
 // ============================================================================
 
-fn line_at(consumed: String) -> Int {
-  list.length(string.split(consumed, "\n"))
+fn count_newlines(s: String) -> Int {
+  do_count_newlines(s, 0)
+}
+
+fn do_count_newlines(s: String, acc: Int) -> Int {
+  case string.split_once(s, "\n") {
+    Ok(#(_, rest)) -> do_count_newlines(rest, acc + 1)
+    Error(_) -> acc
+  }
 }
 
 fn is_truthy(value: Value) -> Bool {
@@ -585,14 +594,14 @@ fn value_to_string(value: Value) -> String {
 
 pub fn build_context(
   skill: Skill,
-  target: String,
+  target: Provider,
   provider_meta: yay.Node,
 ) -> Value {
   let base_props = [
     #("name", VStr(skill.name)),
-    #("version", VStr(skill.version)),
+    #("version", VStr(semver.to_string(skill.version))),
     #("description", VStr(skill.description)),
-    #("provider", VStr(target)),
+    #("provider", VStr(types.provider_to_string(target))),
   ]
 
   let optional_props =
@@ -614,7 +623,7 @@ pub fn build_context(
     list.map(skill.dependencies, fn(dep) {
       VDict([
         #("name", VStr(dep.name)),
-        #("version", VStr(dep.version)),
+        #("version", VStr(version_constraint.to_string(dep.version))),
         #("optional", VBool(dep.optional)),
       ])
     })
@@ -641,16 +650,17 @@ pub fn build_context(
 
   let config_values =
     list.map(skill.config, fn(cf) {
-      let default_prop = case cf.default {
-        Some(d) -> [#("default", VStr(d))]
-        None -> []
+      let #(required_val, default_prop) = case cf.requirement {
+        Required -> #(True, [])
+        Optional -> #(False, [])
+        OptionalWithDefault(d) -> #(False, [#("default", VStr(d))])
       }
       VDict(
         list.flatten([
           [
             #("name", VStr(cf.name)),
             #("description", VStr(cf.description)),
-            #("required", VBool(cf.required)),
+            #("required", VBool(required_val)),
             #("secret", VBool(cf.secret)),
           ],
           default_prop,

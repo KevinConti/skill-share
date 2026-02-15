@@ -1,6 +1,7 @@
 import gleam/list
 import gleeunit/should
 import skillc/provider
+import skillc/types
 
 // ============================================================================
 // §1.4 Provider Discovery
@@ -8,88 +9,76 @@ import skillc/provider
 
 pub fn discover_valid_providers_test() {
   let result = provider.discover_providers("test/fixtures/valid-skill")
-  let assert Ok(discovery) = result
-  should.equal(
-    discovery.providers,
-    ["claude-code", "codex", "openclaw"],
-  )
+  let assert Ok(providers) = result
+  should.equal(providers, [types.ClaudeCode, types.Codex, types.OpenClaw])
 }
 
 pub fn discover_minimal_provider_test() {
   let result = provider.discover_providers("test/fixtures/minimal-skill")
-  let assert Ok(discovery) = result
-  should.equal(discovery.providers, ["openclaw"])
+  let assert Ok(providers) = result
+  should.equal(providers, [types.OpenClaw])
 }
 
 pub fn discover_no_providers_directory_test() {
   let result = provider.discover_providers("test/fixtures/no-providers")
-  let assert Ok(discovery) = result
-  should.equal(discovery.providers, [])
+  let assert Ok(providers) = result
+  should.equal(providers, [])
 }
 
 pub fn discover_empty_providers_directory_test() {
   let result = provider.discover_providers("test/fixtures/empty-providers")
-  let assert Ok(discovery) = result
-  should.equal(discovery.providers, [])
+  let assert Ok(providers) = result
+  should.equal(providers, [])
 }
 
 pub fn subdirectory_without_metadata_ignored_test() {
-  let result =
-    provider.discover_providers("test/fixtures/provider-no-metadata")
-  let assert Ok(discovery) = result
-  should.equal(discovery.providers, [])
+  let result = provider.discover_providers("test/fixtures/provider-no-metadata")
+  let assert Ok(providers) = result
+  should.equal(providers, [])
 }
 
 pub fn is_supported_valid_test() {
-  should.be_true(provider.is_supported("test/fixtures/valid-skill", "openclaw"))
   should.be_true(provider.is_supported(
     "test/fixtures/valid-skill",
-    "claude-code",
+    types.OpenClaw,
   ))
-  should.be_true(provider.is_supported("test/fixtures/valid-skill", "codex"))
+  should.be_true(provider.is_supported(
+    "test/fixtures/valid-skill",
+    types.ClaudeCode,
+  ))
+  should.be_true(provider.is_supported("test/fixtures/valid-skill", types.Codex))
 }
 
 pub fn is_supported_invalid_test() {
   should.be_false(provider.is_supported(
-    "test/fixtures/valid-skill",
-    "nonexistent",
+    "test/fixtures/no-providers",
+    types.OpenClaw,
   ))
-  should.be_false(provider.is_supported("test/fixtures/no-providers", "openclaw"))
 }
 
 pub fn validate_provider_supported_test() {
   let result =
-    provider.validate_provider("test/fixtures/valid-skill", "openclaw")
+    provider.validate_provider("test/fixtures/valid-skill", types.OpenClaw)
   should.be_ok(result)
 }
 
 pub fn validate_provider_unsupported_test() {
   let result =
-    provider.validate_provider("test/fixtures/valid-skill", "nonexistent")
+    provider.validate_provider("test/fixtures/no-providers", types.OpenClaw)
   should.be_error(result)
 }
 
-pub fn unknown_provider_warning_test() {
-  // valid-skill fixture only has known providers, so no warnings
-  let assert Ok(discovery) =
+pub fn known_providers_no_warnings_test() {
+  // valid-skill fixture only has known providers, all should be discovered
+  let assert Ok(providers) =
     provider.discover_providers("test/fixtures/valid-skill")
-  should.equal(discovery.warnings, [])
+  should.equal(list.length(providers), 3)
 }
 
-pub fn unknown_provider_generates_warning_test() {
+pub fn unknown_provider_silently_skipped_test() {
   // unknown-provider fixture has "my-custom-provider" which is not in known list
-  let assert Ok(discovery) =
+  let assert Ok(providers) =
     provider.discover_providers("test/fixtures/unknown-provider")
-  // Should still discover both providers
-  should.be_true(
-    list.contains(discovery.providers, "my-custom-provider"),
-  )
-  should.be_true(
-    list.contains(discovery.providers, "openclaw"),
-  )
-  // Should have exactly one warning for the unknown provider
-  should.equal(
-    discovery.warnings,
-    [provider.UnknownProvider("my-custom-provider")],
-  )
+  // Should only discover openclaw (my-custom-provider silently skipped)
+  should.equal(providers, [types.OpenClaw])
 }

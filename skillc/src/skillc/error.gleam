@@ -8,6 +8,8 @@ pub type SkillError {
   TemplateError(line: Int, message: String)
   ProviderError(provider: String, message: String)
   FileError(path: String, error: simplifile.FileError)
+  RegistryError(message: String)
+  ImportError(source: String, message: String)
 }
 
 pub fn to_string(error: SkillError) -> String {
@@ -16,14 +18,14 @@ pub fn to_string(error: SkillError) -> String {
     ValidationError(field, message) ->
       "Validation error for field '" <> field <> "': " <> message
     TemplateError(line, message) ->
-      "Template error at line "
-      <> int.to_string(line)
-      <> ": "
-      <> message
+      "Template error at line " <> int.to_string(line) <> ": " <> message
     ProviderError(provider, message) ->
       "Provider error (" <> provider <> "): " <> message
     FileError(path, error) ->
       "File error at " <> path <> ": " <> simplifile.describe_error(error)
+    RegistryError(message) -> "Registry error: " <> message
+    ImportError(source, message) ->
+      "Import error (" <> source <> "): " <> message
   }
 }
 
