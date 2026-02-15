@@ -39,6 +39,58 @@ Provider support is declared by directory structure: if `providers/X/metadata.ya
 | [Claude Code](https://code.claude.com/docs/en/skills) | SKILL.md + templates/scripts directory |
 | [OpenAI Codex](https://developers.openai.com/codex/skills) | `.agents/skills/` structure + `openai.yaml` |
 
+## Getting Started
+
+### Prerequisites
+
+- [Gleam](https://gleam.run) >= 1.14.0
+- [Node.js](https://nodejs.org) (for the JavaScript build target)
+
+### Build
+
+```bash
+cd skillc && gleam build
+```
+
+### Quick Usage
+
+```bash
+# Create a new skill
+skillc init my-skill
+
+# Check provider support
+skillc check my-skill
+
+# Compile for all providers
+skillc compile my-skill
+
+# Compile for a single provider
+skillc compile my-skill --target claude-code
+```
+
+## CLI
+
+```
+skillc compile <skill-dir>                          Compile all providers
+skillc compile <skill-dir> --target <provider>      Compile single provider
+skillc compile <skill-dir> --providers <list>       Compile selected providers
+skillc compile <skill-dir> --output <dir>           Compile with custom output
+skillc check <skill-dir>                            Check supported providers
+skillc init <skill-dir>                             Create a new skill
+skillc import <source>                              Import a provider-specific skill
+skillc import <source> --provider <provider>        Import with explicit provider
+skillc import <source> --output <dir>               Import to custom output dir
+skillc publish <skill-dir>                          Publish to GitHub Releases
+skillc publish <skill-dir> --repo <owner/repo>     Publish to specific repo
+skillc search <query>                               Search for skills
+skillc install <owner/repo>                         Install a skill
+skillc install <owner/repo> --target <provider>    Install for specific provider
+skillc list <owner/repo>                            List available versions
+skillc list --installed                             List installed skills
+skillc version                                      Show version
+skillc help                                         Show help
+```
+
 ## Documentation
 
 | Document | Description |
@@ -57,7 +109,7 @@ See [`examples/hello-world/`](examples/hello-world/) for a complete working exam
 
 ## Status
 
-This project is in the **specification phase**. The documents define the input format, compilation behavior, and registry operations. The `skillc` CLI implementation is not yet started.
+The `skillc` CLI v1.0.0 is implemented in [Gleam](https://gleam.run) with compilation, import, scaffolding, and GitHub Releases-based registry commands. The test suite covers 276 test cases across all modules.
 
 ## Related
 

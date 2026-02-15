@@ -5,7 +5,7 @@ Create a cross-platform skill in 4 steps.
 ## Prerequisites
 
 - Familiarity with YAML and Markdown
-- The `skillc` CLI (when available)
+- The `skillc` CLI
 
 ## Step 1: Create the Skill Directory
 
@@ -121,7 +121,7 @@ For provider-specific scripts, add them to `providers/X/scripts/`. They override
 skillc compile my-skill
 
 # Compile for a specific provider
-skillc compile my-skill --provider claude-code
+skillc compile my-skill --target claude-code
 ```
 
 Output appears in `dist/`:

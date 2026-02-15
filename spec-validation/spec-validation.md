@@ -122,9 +122,9 @@ This document outlines test scenarios for validating that the CLI meets the unif
 
 ### 3.2 Single Provider Compilation
 
-- `--provider openclaw` only creates openclaw output
-- `--provider claude-code` only creates claude-code output
-- `--provider codex` only creates codex output
+- `--target openclaw` only creates openclaw output
+- `--target claude-code` only creates claude-code output
+- `--target codex` only creates codex output
 
 ### 3.3 Selective Provider Compilation
 
@@ -178,8 +178,6 @@ This document outlines test scenarios for validating that the CLI meets the unif
 ### 4.1 Publishing
 
 - Valid skill publishes successfully
-- Version number increments correctly (PATCH, MINOR, MAJOR)
-- Publishing to unsupported provider fails with warning
 - Duplicate version fails or prompts for overwrite
 - Successful publish includes correct metadata
 
@@ -193,8 +191,8 @@ This document outlines test scenarios for validating that the CLI meets the unif
 ### 4.3 Installing
 
 - Valid skill installs to correct local directory
-- Version constraint (^1.0.0) resolves to compatible version
-- Dependency skills are installed recursively
+- Version constraint (^1.0.0) resolves to compatible version *(future — not yet implemented)*
+- Dependency skills are installed recursively *(future — not yet implemented)*
 - Missing dependency fails with clear error
 
 ### 4.4 Listing
@@ -221,7 +219,7 @@ This document outlines test scenarios for validating that the CLI meets the unif
 - Exact constraint (1.0.0) matches only that version
 - Range constraint (>=1.0.0 <2.0.0) matches correctly
 
-### 5.3 Version Resolution
+### 5.3 Version Resolution *(future — not yet implemented)*
 
 - Resolving ^1.0.0 with versions [1.0.0, 1.1.0, 2.0.0] selects 1.1.0
 - Resolving ~1.1.0 with versions [1.1.0, 1.1.1, 1.2.0] selects 1.1.1

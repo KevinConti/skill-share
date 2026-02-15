@@ -356,31 +356,20 @@ Or escape individual expressions with a backslash: `\{{not processed}}`.
 
 ## Provider Support Detection
 
-### Programmatic Query
+### Query
 
 ```bash
-# Check support for a specific provider
-skillc check skill-name --provider openclaw
-
-# Check all providers
-skillc check skill-name --all
+skillc check skill-name
 ```
 
 ### Output Format
 
-JSON output for programmatic access:
-
-```json
-{
-  "skill-name": {
-    "version": "1.0.0",
-    "providers": {
-      "openclaw": { "supported": true, "requires": ["python3", "curl"] },
-      "claude-code": { "supported": true, "requires": ["python3"] },
-      "codex": { "supported": true, "requires": ["python3"] }
-    }
-  }
-}
+```
+skill-name v1.0.0
+Supported providers:
+  - openclaw
+  - claude-code
+  - codex
 ```
 
 Support is determined by the existence of `providers/X/metadata.yaml`.
@@ -415,7 +404,7 @@ skillc compile skill-name
 skillc compile skill-name --providers openclaw,claude-code
 
 # Compile for a single provider
-skillc compile skill-name --provider codex
+skillc compile skill-name --target codex
 ```
 
 ### Output Directory Structure
@@ -452,63 +441,41 @@ dist/
 
 ## Registry
 
+Skills are distributed via GitHub Releases. The `skillc` CLI uses the GitHub CLI (`gh`) for registry operations.
+
 ### Publishing
 
 ```bash
-# Publish to registry
-skillc publish skill-name --version 1.0.0
+# Publish to GitHub Releases (infers repo from git remote)
+skillc publish skill-dir
 
-# Publish to specific provider registries
-skillc publish skill-name --providers openclaw,claude-code
+# Publish to a specific repo
+skillc publish skill-dir --repo owner/repo
 ```
 
-### Registry Metadata
-
-Each skill in the registry includes:
-
-```json
-{
-  "name": "skill-name",
-  "version": "1.0.0",
-  "description": "What the skill does",
-  "author": "Author Name",
-  "license": "MIT",
-  "homepage": "https://github.com/user/skill-name",
-  "providers": {
-    "openclaw": { "supported": true },
-    "claude-code": { "supported": true },
-    "codex": { "supported": true }
-  },
-  "dependencies": [],
-  "config": [
-    { "name": "api_token", "required": true, "secret": true }
-  ]
-}
-```
+Publishing creates a GitHub Release tagged with the version from `skill.yaml` and uploads a tarball of the skill source directory.
 
 ### Searching and Installing
 
 ```bash
-# Search registry
+# Search for skills (searches GitHub repos tagged skillc-skill)
 skillc search email
 
-# Install a skill
-skillc install skill-name
+# Install a skill from GitHub Releases
+skillc install owner/repo
 
-# Install specific version
-skillc install skill-name@1.2.0
+# Install a specific version
+skillc install owner/repo@v1.2.0
 
-# List installed skills
-skillc list
+# Install for a specific provider only
+skillc install owner/repo --target claude-code
+
+# List available versions for a repo
+skillc list owner/repo
+
+# List locally installed skills
+skillc list --installed
 ```
-
-### Provider-Specific Registries
-
-The system can publish to each provider's native distribution channel:
-
-- **OpenClaw**: Custom registry (TBD)
-- **Claude Code**: NPM package (`npx skills add`)
-- **Codex**: GitHub repository or custom registry
 
 ---
 
@@ -600,10 +567,11 @@ Or via config file: `~/.config/skill-name/config.json`
 | `skillc init` | Create a new skill from template |
 | `skillc check` | Check provider support |
 | `skillc compile` | Compile for specific providers |
-| `skillc publish` | Publish to registry |
-| `skillc search` | Search registry |
-| `skillc install` | Install from registry |
-| `skillc list` | List installed skills |
+| `skillc import` | Import a provider-specific skill into unified format |
+| `skillc publish` | Publish to GitHub Releases |
+| `skillc search` | Search for skills |
+| `skillc install` | Install from GitHub Releases |
+| `skillc list` | List versions or installed skills |
 
 ---
 
