@@ -101,6 +101,35 @@ skill-universe help                                         Show help
 
 See [`examples/hello-world/`](https://github.com/KevinConti/skill-share/tree/master/examples/hello-world) for a complete working example.
 
+## How is this different from `skills`?
+
+The [`skills`](https://www.npmjs.com/package/skills) CLI (from Vercel) is a package manager that distributes plain Markdown files to agent-specific directories. `skill-universe` is a compiler — it transforms a single source into structurally different output per provider. They solve different problems: distribution vs. adaptation.
+
+| | `skill-universe` | `skills` (Vercel) |
+|---|---|---|
+| **What it is** | Compiler / build tool | Package manager / installer |
+| **Core idea** | Write once, compile to native formats | Distribute plain Markdown to directory paths |
+| **Content adaptation** | Handlebars templates, provider blocks, metadata merging | None — identical file copied to every agent |
+| **Provider-specific metadata** | `allowed-tools`, `context`, `model`, `emoji`, `requires.bins`, per-provider scripts | `name` and `description` only |
+| **Configuration** | Schema-defined config fields, env var mapping, `.env` generation | None |
+| **Dependencies** | Semver constraints (`^1.0.0`, `~1.1.0`) with circular detection | None |
+| **Agent coverage** | 3 providers with structurally different output each | 30+ agents, same file in different directories |
+| **Distribution** | GitHub Releases with versioned tarballs | Git repos cloned via CLI |
+| **Build step required** | Yes | No |
+
+For simple text-only skills that need no metadata differences across agents, `skills` is lighter-weight and has broader agent coverage. For skills that need provider-specific metadata, scripts, configuration, or conditional content, `skill-universe` produces genuinely native output rather than one-size-fits-all copies. The two can work together — compile with `skill-universe`, distribute the output with `skills`.
+
+## Roadmap
+
+- **Expand provider coverage** — Add providers beyond OpenClaw, Claude Code, and Codex (e.g., Cursor, Windsurf, Gemini CLI). Each new provider gets genuinely adapted output, not just another directory path.
+- **`skills` CLI compatibility** — Compile output that is directly installable via `npx skills add`, bridging the two ecosystems so authors compile with `skill-universe` and distribute through the `skills` registry.
+- **Interactive skill discovery** — Add a browsable `skill-universe find` command with interactive selection, similar to `npx skills find`.
+- **Update detection** — `skill-universe check --updates` and `skill-universe update` commands to notify when installed skills have newer versions available.
+- **GitLab and arbitrary git URL support** — Extend publishing and installation beyond GitHub-only sources.
+- **CI/CD mode** — `--yes` and `--all` flags for non-interactive compilation and batch operations in pipelines.
+- **Agent auto-detection** — Detect locally installed agents and compile/install only for those providers automatically.
+- **Global installation scope** — `-g` flag for user-level skill installation alongside project-scoped installs.
+
 ## Related
 
 - [Agent Skills Standard](https://agentskills.io)
