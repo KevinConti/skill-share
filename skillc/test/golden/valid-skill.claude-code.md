@@ -15,13 +15,9 @@ A test skill for validation
 
 Use this skill to perform test operations.
 
-
-
 ## Claude Code Notes
 
 This skill runs in a forked subagent.
-
-
 
 
 ## Configuration

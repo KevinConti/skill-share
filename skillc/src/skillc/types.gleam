@@ -36,12 +36,9 @@ pub type ConfigField {
   )
 }
 
-pub type ProviderMeta {
-  ProviderMeta(provider_name: String, raw: String)
-}
-
 pub type CompileWarning {
   FrontmatterInInstructions(file: String)
+  UnknownProviderWarning(name: String)
 }
 
 pub type CompiledSkill {

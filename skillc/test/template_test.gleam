@@ -500,6 +500,82 @@ pub fn unclosed_provider_error_has_line_number_test() {
 }
 
 // ============================================================================
+// Group D: Additional template rendering tests
+// ============================================================================
+
+pub fn unless_with_truthy_value_excludes_content_test() {
+  let result =
+    template.render_template(
+      "before{{#unless meta.emoji}}hidden{{/unless}}after",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
+}
+
+pub fn if_with_empty_string_is_falsy_test() {
+  // Create provider meta with an empty string field
+  let meta =
+    yay.NodeMap([#(yay.NodeStr("empty_field"), yay.NodeStr(""))])
+  let result =
+    template.render_template(
+      "before{{#if meta.empty_field}}hidden{{/if}}after",
+      "openclaw",
+      test_skill(),
+      meta,
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
+}
+
+pub fn if_with_empty_list_is_falsy_test() {
+  let skill = Skill(..test_skill(), dependencies: [], config: [])
+  let result =
+    template.render_template(
+      "before{{#if config}}shown{{/if}}after",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
+}
+
+pub fn each_with_simple_string_items_test() {
+  // {{#each}} over a list of strings, using {{this}}
+  let result =
+    template.render_template(
+      "{{#each metadata.tags}}[{{this}}]{{/each}}",
+      "openclaw",
+      Skill(
+        ..test_skill(),
+        metadata: Some(SkillMetadata(
+          author: None,
+          author_email: None,
+          tags: ["web", "api", "test"],
+        )),
+      ),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "[web][api][test]")
+}
+
+pub fn undefined_deep_nested_path_resolves_empty_test() {
+  let result =
+    template.render_template(
+      "before{{a.b.c.d}}after",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
+}
+
+// ============================================================================
 // Test Helpers
 // ============================================================================
 

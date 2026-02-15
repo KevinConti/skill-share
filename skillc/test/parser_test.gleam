@@ -367,6 +367,55 @@ config:
 }
 
 // ============================================================================
+// error.to_string: ProviderError and FileError coverage (Group A)
+// ============================================================================
+
+pub fn error_to_string_provider_error_test() {
+  let err = error.ProviderError("my-provider", "not supported")
+  let s = error.to_string(err)
+  should.be_true(string.contains(s, "my-provider"))
+  should.be_true(string.contains(s, "not supported"))
+}
+
+pub fn error_to_string_file_error_test() {
+  let err = error.FileError("/some/path.yaml", simplifile.Enoent)
+  let s = error.to_string(err)
+  should.be_true(string.contains(s, "/some/path.yaml"))
+}
+
+// ============================================================================
+// Semver validation edge cases (Group C)
+// ============================================================================
+
+pub fn semver_leading_zeros_rejected_test() {
+  should.be_error(parser.validate_semver("01.0.0"))
+  should.be_error(parser.validate_semver("1.01.0"))
+  should.be_error(parser.validate_semver("1.0.01"))
+}
+
+pub fn semver_empty_prerelease_rejected_test() {
+  should.be_error(parser.validate_semver("1.0.0-"))
+}
+
+pub fn semver_empty_build_metadata_rejected_test() {
+  should.be_error(parser.validate_semver("1.0.0+"))
+}
+
+// ============================================================================
+// Frontmatter detection (Group F)
+// ============================================================================
+
+pub fn has_frontmatter_with_leading_whitespace_test() {
+  should.be_true(parser.has_frontmatter("  ---\ntitle: Test\n---"))
+  should.be_true(parser.has_frontmatter("\n---\ntitle: Test\n---"))
+  should.be_true(parser.has_frontmatter(" \n ---\ntitle: Test\n---"))
+}
+
+pub fn has_frontmatter_with_dashes_only_no_newline_test() {
+  should.be_true(parser.has_frontmatter("---"))
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 

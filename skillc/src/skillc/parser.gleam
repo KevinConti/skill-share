@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
@@ -46,7 +47,8 @@ fn parse_skill_from_node(node: yay.Node) -> Result(Skill, SkillError) {
   )
   use _ <- result.try(validate_semver(version))
 
-  let license = yay.extract_optional_string(node, "license") |> result.unwrap(None)
+  let license =
+    yay.extract_optional_string(node, "license") |> result.unwrap(None)
   let homepage =
     yay.extract_optional_string(node, "homepage") |> result.unwrap(None)
   let repository =
@@ -81,11 +83,7 @@ fn parse_metadata(node: yay.Node) -> option.Option(SkillMetadata) {
       let tags =
         yay.extract_string_list(node, "metadata.tags")
         |> result.unwrap([])
-      Some(SkillMetadata(
-        author: author,
-        author_email: author_email,
-        tags: tags,
-      ))
+      Some(SkillMetadata(author: author, author_email: author_email, tags: tags))
     }
     Error(_) -> None
   }
@@ -162,47 +160,48 @@ pub fn validate_semver(version: String) -> Result(Nil, SkillError) {
   // Strip build metadata first (after +), then pre-release (after -)
   // Must handle + before - because build metadata can contain dashes
   let without_build = case string.split_once(version, "+") {
-    Ok(#(before, _)) -> before
-    Error(_) -> version
+    Ok(#(before, after)) ->
+      case after {
+        "" -> return_semver_error(version)
+        _ -> Ok(before)
+      }
+    Error(_) -> Ok(version)
   }
-  let base = case string.split_once(without_build, "-") {
-    Ok(#(before, _)) -> before
-    Error(_) -> without_build
+  use without_build <- result.try(without_build)
+  let base_result = case string.split_once(without_build, "-") {
+    Ok(#(before, after)) ->
+      case after {
+        "" -> return_semver_error(version)
+        _ -> Ok(before)
+      }
+    Error(_) -> Ok(without_build)
   }
+  use base <- result.try(base_result)
   let parts = string.split(base, ".")
   case parts {
     [major, minor, patch] -> {
-      case is_numeric(major), is_numeric(minor), is_numeric(patch) {
+      case
+        is_valid_semver_number(major),
+        is_valid_semver_number(minor),
+        is_valid_semver_number(patch)
+      {
         True, True, True -> Ok(Nil)
-        _, _, _ ->
-          Error(ValidationError(
-            "version",
-            "Invalid semver format: " <> version,
-          ))
+        _, _, _ -> return_semver_error(version)
       }
     }
-    _ ->
-      Error(ValidationError("version", "Invalid semver format: " <> version))
+    _ -> return_semver_error(version)
   }
 }
 
-fn is_numeric(s: String) -> Bool {
+fn return_semver_error(version: String) -> Result(a, SkillError) {
+  Error(ValidationError("version", "Invalid semver format: " <> version))
+}
+
+fn is_valid_semver_number(s: String) -> Bool {
   case s {
     "" -> False
-    _ ->
-      string.to_graphemes(s)
-      |> list.all(fn(c) {
-        c == "0"
-        || c == "1"
-        || c == "2"
-        || c == "3"
-        || c == "4"
-        || c == "5"
-        || c == "6"
-        || c == "7"
-        || c == "8"
-        || c == "9"
-      })
+    "0" -> True
+    _ -> !string.starts_with(s, "0") && result.is_ok(int.parse(s))
   }
 }
 

@@ -1,6 +1,6 @@
 ---
 name: test-skill
-description: A test skill for validation
+description: "A test skill for validation"
 version: 1.2.3
 ---
 
@@ -11,10 +11,6 @@ A test skill for validation
 ## Usage
 
 Use this skill to perform test operations.
-
-
-
-
 
 ## Shared Notes
 

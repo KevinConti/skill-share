@@ -5,8 +5,14 @@ version: 1.2.3
 license: MIT
 metadata.openclaw:
   emoji: 🧪
-  requires: {...}
-  install: [{...}]
+  requires:
+    bins: [python3, curl]
+  install:
+    - id: pip
+      kind: pip
+      package: test-cli
+      bins: [test-cli]
+      label: "Install Test CLI (pip)"
 ---
 
 # test-skill v1.2.3
@@ -20,8 +26,6 @@ Use this skill to perform test operations.
 ## OpenClaw Notes
 
 Icon: 🧪
-
-
 
 
 ## Shared Notes

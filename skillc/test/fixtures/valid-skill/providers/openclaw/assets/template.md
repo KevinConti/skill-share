@@ -1,0 +1,1 @@
+openclaw-specific template override

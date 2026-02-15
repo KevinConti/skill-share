@@ -10,7 +10,7 @@ import skillc/parser
 import skillc/provider
 import skillc/template
 import skillc/types.{
-  type CompiledSkill, type CompileWarning, type FileCopy, CompiledSkill,
+  type CompileWarning, type CompiledSkill, type FileCopy, CompiledSkill,
   FileCopy, FrontmatterInInstructions,
 }
 import yay
@@ -30,22 +30,20 @@ pub fn compile(
   use _ <- result.try(provider.validate_provider(skill_dir, target))
 
   // 3. Parse provider metadata
-  let metadata_path =
-    skill_dir <> "/providers/" <> target <> "/metadata.yaml"
+  let metadata_path = skill_dir <> "/providers/" <> target <> "/metadata.yaml"
   use meta_content <- result.try(
     simplifile.read(metadata_path)
     |> result.map_error(fn(e) { FileError(metadata_path, e) }),
   )
-  use provider_meta <- result.try(
-    parser.parse_metadata_yaml(meta_content, target),
-  )
+  use provider_meta <- result.try(parser.parse_metadata_yaml(
+    meta_content,
+    target,
+  ))
 
   // 4. Read INSTRUCTIONS.md
   use instructions_content <- result.try(
     simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
-    |> result.map_error(fn(e) {
-      FileError(skill_dir <> "/INSTRUCTIONS.md", e)
-    }),
+    |> result.map_error(fn(e) { FileError(skill_dir <> "/INSTRUCTIONS.md", e) }),
   )
 
   // 4b. Check for frontmatter in INSTRUCTIONS.md (generates warning)
@@ -99,9 +97,7 @@ pub fn compile(
   ))
 }
 
-pub fn compile_all(
-  skill_dir: String,
-) -> Result(List(CompiledSkill), SkillError) {
+pub fn compile_all(skill_dir: String) -> Result(List(CompiledSkill), SkillError) {
   use discovery <- result.try(provider.discover_providers(skill_dir))
   case discovery.providers {
     [] ->
@@ -109,8 +105,25 @@ pub fn compile_all(
         "none",
         "No supported providers found in " <> skill_dir,
       ))
-    providers ->
-      list.try_map(providers, fn(p) { compile(skill_dir, p) })
+    providers -> {
+      let discovery_warnings =
+        list.map(discovery.warnings, fn(w) {
+          case w {
+            provider.UnknownProvider(name) -> types.UnknownProviderWarning(name)
+          }
+        })
+      use compiled_list <- result.try(
+        list.try_map(providers, fn(p) { compile(skill_dir, p) }),
+      )
+      Ok(
+        list.map(compiled_list, fn(c) {
+          CompiledSkill(
+            ..c,
+            warnings: list.append(discovery_warnings, c.warnings),
+          )
+        }),
+      )
+    }
   }
 }
 
@@ -120,10 +133,8 @@ pub fn emit(
   skill_name: String,
 ) -> Result(Nil, SkillError) {
   let provider_dir = case compiled.provider {
-    "codex" ->
-      output_dir <> "/codex/.agents/skills/" <> skill_name
-    provider ->
-      output_dir <> "/" <> provider <> "/" <> skill_name
+    "codex" -> output_dir <> "/codex/.agents/skills/" <> skill_name
+    provider -> output_dir <> "/" <> provider <> "/" <> skill_name
   }
 
   use _ <- result.try(
@@ -138,14 +149,13 @@ pub fn emit(
   )
 
   // Copy scripts
-  use _ <- result.try(
-    copy_file_list(compiled.scripts, provider_dir <> "/scripts"),
-  )
+  use _ <- result.try(copy_file_list(
+    compiled.scripts,
+    provider_dir <> "/scripts",
+  ))
 
   // Copy assets
-  use _ <- result.try(
-    copy_file_list(compiled.assets, provider_dir <> "/assets"),
-  )
+  use _ <- result.try(copy_file_list(compiled.assets, provider_dir <> "/assets"))
 
   // For codex: generate agents/openai.yaml
   case compiled.provider {
@@ -175,9 +185,42 @@ fn format_skill_md(
   case target {
     "openclaw" -> format_openclaw(skill, provider_meta, body)
     "claude-code" -> format_claude_code(skill, provider_meta, body)
-    "codex" -> format_codex(skill, body)
-    _ -> format_generic(skill, body)
+    "codex" | _ -> format_generic(skill, body)
   }
+}
+
+/// Build common frontmatter lines and extract remaining provider metadata pairs.
+/// Returns the base frontmatter lines and the non-universal metadata key-value pairs.
+fn build_base_frontmatter(
+  skill: types.Skill,
+  provider_meta: yay.Node,
+) -> #(List(String), List(#(yay.Node, yay.Node))) {
+  let universal_keys = ["name", "description", "version"]
+
+  let name = meta_string_or(provider_meta, "name", skill.name)
+  let description =
+    meta_string_or(provider_meta, "description", skill.description)
+  let version = meta_string_or(provider_meta, "version", skill.version)
+
+  let base_lines = [
+    "---",
+    "name: " <> quote_yaml_string(name),
+    "description: " <> quote_yaml_string(description),
+    "version: " <> version,
+  ]
+
+  let extra_pairs = case provider_meta {
+    yay.NodeMap(pairs) ->
+      list.filter(pairs, fn(pair) {
+        case pair {
+          #(yay.NodeStr(key), _) -> !list.contains(universal_keys, key)
+          _ -> False
+        }
+      })
+    _ -> []
+  }
+
+  #(base_lines, extra_pairs)
 }
 
 fn format_openclaw(
@@ -185,52 +228,34 @@ fn format_openclaw(
   provider_meta: yay.Node,
   body: String,
 ) -> String {
-  // Provider values override universal values for top-level fields
-  let name = meta_string_or(provider_meta, "name", skill.name)
-  let description =
-    meta_string_or(provider_meta, "description", skill.description)
-  let version = meta_string_or(provider_meta, "version", skill.version)
-
-  let frontmatter_lines = [
-    "---",
-    "name: " <> name,
-    "description: " <> quote_yaml_string(description),
-    "version: " <> version,
-  ]
+  let #(base_lines, extra_pairs) = build_base_frontmatter(skill, provider_meta)
 
   let frontmatter_lines = case skill.license {
-    Some(l) -> list.append(frontmatter_lines, ["license: " <> l])
-    None -> frontmatter_lines
+    Some(l) -> list.append(base_lines, ["license: " <> l])
+    None -> base_lines
   }
 
-  // Add openclaw-specific metadata under metadata.openclaw
-  // (exclude fields already used at top level)
-  let universal_keys = ["name", "description", "version"]
-  let meta_lines = case provider_meta {
-    yay.NodeMap(pairs) -> {
+  let meta_lines = case extra_pairs {
+    [] -> []
+    pairs -> {
       let openclaw_lines =
         list.filter_map(pairs, fn(pair) {
           case pair {
-            #(yay.NodeStr(key), value) ->
-              case list.contains(universal_keys, key) {
-                True -> Error(Nil)
-                False ->
-                  Ok("  " <> key <> ": " <> node_to_yaml_value(value))
+            #(yay.NodeStr(key), value) -> {
+              let val = node_to_yaml_value(value, 4)
+              case string.starts_with(val, "\n") {
+                True -> Ok("  " <> key <> ":" <> val)
+                False -> Ok("  " <> key <> ": " <> val)
               }
+            }
             _ -> Error(Nil)
           }
         })
-      case openclaw_lines {
-        [] -> []
-        lines -> list.append(["metadata.openclaw:"], lines)
-      }
+      ["metadata.openclaw:", ..openclaw_lines]
     }
-    _ -> []
   }
 
-  let all_lines =
-    list.append(frontmatter_lines, meta_lines)
-    |> list.append(["---"])
+  let all_lines = list.flatten([frontmatter_lines, meta_lines, ["---"]])
 
   string.join(all_lines, "\n") <> "\n\n" <> body
 }
@@ -240,61 +265,33 @@ fn format_claude_code(
   provider_meta: yay.Node,
   body: String,
 ) -> String {
-  // Provider values override universal values for top-level fields
-  let name = meta_string_or(provider_meta, "name", skill.name)
-  let description =
-    meta_string_or(provider_meta, "description", skill.description)
-  let version = meta_string_or(provider_meta, "version", skill.version)
+  let #(frontmatter_lines, extra_pairs) =
+    build_base_frontmatter(skill, provider_meta)
 
-  let frontmatter_lines = [
-    "---",
-    "name: " <> name,
-    "description: " <> quote_yaml_string(description),
-    "version: " <> version,
-  ]
-
-  // Flat frontmatter: merge provider metadata at top level
-  // (exclude fields already used above)
-  let universal_keys = ["name", "description", "version"]
-  let meta_lines = case provider_meta {
-    yay.NodeMap(pairs) ->
-      list.filter_map(pairs, fn(pair) {
-        case pair {
-          #(yay.NodeStr(key), value) ->
-            case list.contains(universal_keys, key) {
-              True -> Error(Nil)
-              False -> Ok(key <> ": " <> node_to_yaml_value(value))
-            }
-          _ -> Error(Nil)
+  let meta_lines =
+    list.filter_map(extra_pairs, fn(pair) {
+      case pair {
+        #(yay.NodeStr(key), value) -> {
+          let val = node_to_yaml_value(value, 2)
+          case string.starts_with(val, "\n") {
+            True -> Ok(key <> ":" <> val)
+            False -> Ok(key <> ": " <> val)
+          }
         }
-      })
-    _ -> []
-  }
+        _ -> Error(Nil)
+      }
+    })
 
-  let all_lines =
-    list.append(frontmatter_lines, meta_lines)
-    |> list.append(["---"])
+  let all_lines = list.flatten([frontmatter_lines, meta_lines, ["---"]])
 
   string.join(all_lines, "\n") <> "\n\n" <> body
-}
-
-fn format_codex(skill: types.Skill, body: String) -> String {
-  let frontmatter_lines = [
-    "---",
-    "name: " <> skill.name,
-    "description: " <> skill.description,
-    "version: " <> skill.version,
-    "---",
-  ]
-
-  string.join(frontmatter_lines, "\n") <> "\n\n" <> body
 }
 
 fn format_generic(skill: types.Skill, body: String) -> String {
   let frontmatter_lines = [
     "---",
-    "name: " <> skill.name,
-    "description: " <> skill.description,
+    "name: " <> quote_yaml_string(skill.name),
+    "description: " <> quote_yaml_string(skill.description),
     "version: " <> skill.version,
     "---",
   ]
@@ -309,7 +306,7 @@ fn meta_string_or(meta: yay.Node, key: String, default: String) -> String {
   }
 }
 
-fn node_to_yaml_value(node: yay.Node) -> String {
+fn node_to_yaml_value(node: yay.Node, indent: Int) -> String {
   case node {
     yay.NodeStr(s) -> quote_yaml_string(s)
     yay.NodeInt(i) -> int.to_string(i)
@@ -318,24 +315,113 @@ fn node_to_yaml_value(node: yay.Node) -> String {
     yay.NodeBool(False) -> "false"
     yay.NodeNil -> "null"
     yay.NodeSeq(items) ->
-      "[" <> string.join(list.map(items, node_to_yaml_value), ", ") <> "]"
-    yay.NodeMap(_) -> "{...}"
+      case seq_is_simple(items) {
+        True ->
+          "["
+          <> string.join(
+            list.map(items, fn(i) { node_to_yaml_value(i, indent) }),
+            ", ",
+          )
+          <> "]"
+        False -> serialize_yaml_seq(items, indent)
+      }
+    yay.NodeMap(pairs) -> serialize_yaml_map(pairs, indent)
   }
 }
+
+fn seq_is_simple(items: List(yay.Node)) -> Bool {
+  list.all(items, fn(item) {
+    case item {
+      yay.NodeStr(_)
+      | yay.NodeInt(_)
+      | yay.NodeFloat(_)
+      | yay.NodeBool(_)
+      | yay.NodeNil -> True
+      _ -> False
+    }
+  })
+}
+
+fn serialize_yaml_seq(items: List(yay.Node), indent: Int) -> String {
+  let prefix = string.repeat(" ", indent)
+  let lines =
+    list.map(items, fn(item) {
+      case item {
+        yay.NodeMap(pairs) -> {
+          // First key-value on same line as "- ", rest indented under it
+          let pair_lines =
+            list.filter_map(pairs, fn(pair) {
+              case pair {
+                #(yay.NodeStr(key), value) -> {
+                  let val = node_to_yaml_value(value, indent + 4)
+                  case string.starts_with(val, "\n") {
+                    True -> Ok(key <> ":" <> val)
+                    False -> Ok(key <> ": " <> val)
+                  }
+                }
+                _ -> Error(Nil)
+              }
+            })
+          case pair_lines {
+            [first, ..rest] ->
+              prefix
+              <> "- "
+              <> first
+              <> string.join(
+                list.map(rest, fn(line) { "\n" <> prefix <> "  " <> line }),
+                "",
+              )
+            [] -> prefix <> "- {}"
+          }
+        }
+        _ -> prefix <> "- " <> node_to_yaml_value(item, indent + 2)
+      }
+    })
+  "\n" <> string.join(lines, "\n")
+}
+
+fn serialize_yaml_map(pairs: List(#(yay.Node, yay.Node)), indent: Int) -> String {
+  let prefix = string.repeat(" ", indent)
+  let lines =
+    list.filter_map(pairs, fn(pair) {
+      case pair {
+        #(yay.NodeStr(key), value) -> {
+          let val = node_to_yaml_value(value, indent + 2)
+          case string.starts_with(val, "\n") {
+            True -> Ok(prefix <> key <> ":" <> val)
+            False -> Ok(prefix <> key <> ": " <> val)
+          }
+        }
+        _ -> Error(Nil)
+      }
+    })
+  "\n" <> string.join(lines, "\n")
+}
+
+const yaml_special_chars = [
+  ":", "#", " ", "\"", "'", "[", "]", "{", "}", ",", "&", "*", "!", "|", ">",
+  "%", "@", "\n",
+]
+
+const yaml_reserved_words = [
+  "true", "false", "yes", "no", "on", "off", "null", "~", "",
+]
 
 fn quote_yaml_string(s: String) -> String {
-  case
-    string.contains(s, ":"),
-    string.contains(s, "#"),
-    string.contains(s, " ")
-  {
-    True, _, _ -> "\"" <> s <> "\""
-    _, True, _ -> "\"" <> s <> "\""
-    _, _, True -> "\"" <> s <> "\""
-    _, _, _ -> s
+  let needs_quoting =
+    list.any(yaml_special_chars, fn(c) { string.contains(s, c) })
+    || list.contains(yaml_reserved_words, s)
+  case needs_quoting {
+    True -> {
+      // Escape backslashes first, then double quotes, then newlines
+      let escaped = string.replace(s, "\\", "\\\\")
+      let escaped = string.replace(escaped, "\"", "\\\"")
+      let escaped = string.replace(escaped, "\n", "\\n")
+      "\"" <> escaped <> "\""
+    }
+    False -> s
   }
 }
-
 
 // ============================================================================
 // File merging
@@ -347,8 +433,7 @@ fn collect_files(
   dir_type: String,
 ) -> List(FileCopy) {
   let shared_dir = skill_dir <> "/" <> dir_type
-  let provider_dir =
-    skill_dir <> "/providers/" <> target <> "/" <> dir_type
+  let provider_dir = skill_dir <> "/providers/" <> target <> "/" <> dir_type
 
   let shared_files = case simplifile.get_files(shared_dir) {
     Ok(files) ->
