@@ -55,7 +55,7 @@ pub fn check_all_satisfied_test() {
   let missing =
     list.filter(statuses, fn(s) {
       case s {
-        config.Missing(_) -> True
+        config.MissingRequired(_) -> True
         _ -> False
       }
     })
@@ -69,7 +69,7 @@ pub fn check_missing_required_test() {
   let missing =
     list.filter_map(statuses, fn(s) {
       case s {
-        config.Missing(field:) -> Ok(field.name)
+        config.MissingRequired(field:) -> Ok(field.name)
         _ -> Error(Nil)
       }
     })
@@ -83,7 +83,7 @@ pub fn check_optional_not_missing_test() {
   let missing =
     list.filter_map(statuses, fn(s) {
       case s {
-        config.Missing(field:) -> Ok(field.name)
+        config.MissingRequired(field:) -> Ok(field.name)
         _ -> Error(Nil)
       }
     })
@@ -98,12 +98,14 @@ pub fn check_default_used_when_not_set_test() {
   let timeout_status =
     list.find(statuses, fn(s) {
       case s {
-        config.Satisfied(field:, ..) -> field.name == "timeout"
-        config.Missing(field:) -> field.name == "timeout"
+        config.Provided(field:, ..) -> field.name == "timeout"
+        config.DefaultUsed(field:, ..) -> field.name == "timeout"
+        config.MissingRequired(field:) -> field.name == "timeout"
+        config.Skipped(field:) -> field.name == "timeout"
       }
     })
-  let assert Ok(config.Satisfied(_, value)) = timeout_status
-  should.equal(value, "30")
+  let assert Ok(config.DefaultUsed(_, default)) = timeout_status
+  should.equal(default, "30")
 }
 
 pub fn check_empty_string_counts_as_missing_for_required_test() {
@@ -118,7 +120,7 @@ pub fn check_empty_string_counts_as_missing_for_required_test() {
   let missing =
     list.filter_map(statuses, fn(s) {
       case s {
-        config.Missing(field:) -> Ok(field.name)
+        config.MissingRequired(field:) -> Ok(field.name)
         _ -> Error(Nil)
       }
     })

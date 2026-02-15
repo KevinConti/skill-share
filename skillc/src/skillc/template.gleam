@@ -40,8 +40,7 @@ pub fn render_template(
   skill: Skill,
   provider_meta: yay.Node,
 ) -> Result(String, SkillError) {
-  let target_str = types.provider_to_string(target)
-  use processed <- result.try(process_provider_blocks(content, target_str))
+  use processed <- result.try(process_provider_blocks(content, target))
   let context = build_context(skill, target, provider_meta)
   render(processed, context)
 }
@@ -66,9 +65,10 @@ pub type Value {
 
 pub fn process_provider_blocks(
   content: String,
-  target: String,
+  target: Provider,
 ) -> Result(String, SkillError) {
-  do_process_provider_blocks(content, target, "", 1)
+  let target_str = types.provider_to_string(target)
+  do_process_provider_blocks(content, target_str, "", 1)
 }
 
 fn do_process_provider_blocks(

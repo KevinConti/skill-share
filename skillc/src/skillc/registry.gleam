@@ -224,7 +224,7 @@ pub fn install(
   use result_msg <- result.try(case target {
     Some(t) -> {
       use compiled <- result.try(compiler.compile(skill_dir, t))
-      let name = types.extract_name(compiled)
+      let name = compiled.name
       use _ <- result.try(compiler.emit(compiled, output_dir, name))
       Ok("Installed " <> name <> " (" <> t <> ") to " <> output_dir)
     }
@@ -232,14 +232,14 @@ pub fn install(
       use compiled_list <- result.try(compiler.compile_all(skill_dir))
       use _ <- result.try(
         list.try_each(compiled_list, fn(compiled) {
-          let name = types.extract_name(compiled)
+          let name = compiled.name
           compiler.emit(compiled, output_dir, name)
         }),
       )
       let provider_names =
         list.map(compiled_list, fn(c) { types.provider_to_string(c.provider) })
       let name = case compiled_list {
-        [first, ..] -> types.extract_name(first)
+        [first, ..] -> first.name
         [] -> "skill"
       }
       Ok(

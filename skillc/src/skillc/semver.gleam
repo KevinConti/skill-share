@@ -46,10 +46,12 @@ pub fn parse(version: String) -> Result(SemVer, SkillError) {
       }
     Error(_) -> #(Ok(version), None)
   }
-  use without_build <- result.try(case without_build {
-    Ok(v) -> Ok(v)
-    Error(_) -> return_semver_error(version)
-  })
+  use without_build <- result.try(
+    without_build
+    |> result.map_error(fn(_) {
+      ValidationError("version", "Invalid semver format: " <> version)
+    }),
+  )
   let #(base, prerelease) = case string.split_once(without_build, "-") {
     Ok(#(before, after)) ->
       case after {
@@ -58,10 +60,12 @@ pub fn parse(version: String) -> Result(SemVer, SkillError) {
       }
     Error(_) -> #(Ok(without_build), None)
   }
-  use base <- result.try(case base {
-    Ok(v) -> Ok(v)
-    Error(_) -> return_semver_error(version)
-  })
+  use base <- result.try(
+    base
+    |> result.map_error(fn(_) {
+      ValidationError("version", "Invalid semver format: " <> version)
+    }),
+  )
   let parts = string.split(base, ".")
   case parts {
     [major_s, minor_s, patch_s] -> {

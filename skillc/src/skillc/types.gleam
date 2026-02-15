@@ -1,7 +1,4 @@
-import gleam/list
 import gleam/option.{type Option}
-import gleam/result
-import gleam/string
 import skillc/semver.{type SemVer}
 import skillc/version_constraint.{type VersionConstraint}
 
@@ -80,6 +77,7 @@ pub type CompileWarning {
 
 pub type CompiledSkill {
   CompiledSkill(
+    name: String,
     provider: Provider,
     skill_md: String,
     scripts: List(FileCopy),
@@ -93,23 +91,3 @@ pub type FileCopy {
   FileCopy(src: String, relative_path: String)
 }
 
-pub fn extract_name(compiled: CompiledSkill) -> String {
-  let lines = string.split(compiled.skill_md, "\n")
-  list.find_map(lines, fn(line) {
-    case string.starts_with(line, "name: ") {
-      True -> {
-        let name = string.drop_start(line, 6)
-        let name = case
-          string.starts_with(name, "\""),
-          string.ends_with(name, "\"")
-        {
-          True, True -> name |> string.drop_start(1) |> string.drop_end(1)
-          _, _ -> name
-        }
-        Ok(name)
-      }
-      False -> Error(Nil)
-    }
-  })
-  |> result.unwrap("skill")
-}

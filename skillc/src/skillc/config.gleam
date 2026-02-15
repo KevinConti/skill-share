@@ -5,8 +5,10 @@ import skillc/types.{
 }
 
 pub type ConfigStatus {
-  Satisfied(field: ConfigField, value: String)
-  Missing(field: ConfigField)
+  Provided(field: ConfigField, value: String)
+  MissingRequired(field: ConfigField)
+  DefaultUsed(field: ConfigField, default: String)
+  Skipped(field: ConfigField)
 }
 
 /// Generate a .env-format template for a skill's configuration fields.
@@ -60,12 +62,12 @@ pub fn check_with_lookup(
   list.map(skill.config, fn(field) {
     let env_name = config_env_name(skill.name, field.name)
     case lookup(env_name) {
-      Ok(value) if value != "" -> Satisfied(field: field, value: value)
+      Ok(value) if value != "" -> Provided(field: field, value: value)
       _ ->
         case field.requirement {
-          Required -> Missing(field: field)
-          Optional -> Satisfied(field: field, value: "")
-          OptionalWithDefault(d) -> Satisfied(field: field, value: d)
+          Required -> MissingRequired(field: field)
+          Optional -> Skipped(field: field)
+          OptionalWithDefault(d) -> DefaultUsed(field: field, default: d)
         }
     }
   })

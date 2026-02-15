@@ -17,7 +17,7 @@ import yay
 pub fn provider_block_included_test() {
   let content =
     "before\n{{#provider \"openclaw\"}}openclaw content{{/provider}}\nafter"
-  let assert Ok(result) = template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result) = template.process_provider_blocks(content, types.OpenClaw)
   should.be_true(string.contains(result, "openclaw content"))
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
@@ -27,7 +27,7 @@ pub fn provider_block_excluded_test() {
   let content =
     "before\n{{#provider \"openclaw\"}}openclaw content{{/provider}}\nafter"
   let assert Ok(result) =
-    template.process_provider_blocks(content, "claude-code")
+    template.process_provider_blocks(content, types.ClaudeCode)
   should.be_false(string.contains(result, "openclaw content"))
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
@@ -37,9 +37,9 @@ pub fn multi_provider_block_included_test() {
   let content =
     "{{#provider \"openclaw\" \"codex\"}}shared content{{/provider}}"
   let assert Ok(result_openclaw) =
-    template.process_provider_blocks(content, "openclaw")
+    template.process_provider_blocks(content, types.OpenClaw)
   let assert Ok(result_codex) =
-    template.process_provider_blocks(content, "codex")
+    template.process_provider_blocks(content, types.Codex)
   should.be_true(string.contains(result_openclaw, "shared content"))
   should.be_true(string.contains(result_codex, "shared content"))
 }
@@ -48,13 +48,13 @@ pub fn multi_provider_block_excluded_test() {
   let content =
     "{{#provider \"openclaw\" \"codex\"}}shared content{{/provider}}"
   let assert Ok(result) =
-    template.process_provider_blocks(content, "claude-code")
+    template.process_provider_blocks(content, types.ClaudeCode)
   should.be_false(string.contains(result, "shared content"))
 }
 
 pub fn empty_provider_block_test() {
   let content = "before{{#provider \"openclaw\"}}{{/provider}}after"
-  let assert Ok(result) = template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result) = template.process_provider_blocks(content, types.OpenClaw)
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
 }
@@ -62,21 +62,21 @@ pub fn empty_provider_block_test() {
 pub fn nested_provider_blocks_test() {
   let content =
     "{{#provider \"openclaw\"}}outer{{#provider \"openclaw\"}}inner{{/provider}}end{{/provider}}"
-  let assert Ok(result) = template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result) = template.process_provider_blocks(content, types.OpenClaw)
   should.be_true(string.contains(result, "outer"))
   should.be_true(string.contains(result, "inner"))
 }
 
 pub fn unclosed_provider_block_returns_error_test() {
   let content = "before\n{{#provider \"openclaw\"}}no closing tag"
-  let result = template.process_provider_blocks(content, "openclaw")
+  let result = template.process_provider_blocks(content, types.OpenClaw)
   should.be_error(result)
 }
 
 pub fn malformed_provider_tag_returns_error_test() {
   // Missing closing }} on the tag
   let content = "{{#provider \"openclaw\" some content"
-  let result = template.process_provider_blocks(content, "openclaw")
+  let result = template.process_provider_blocks(content, types.OpenClaw)
   should.be_error(result)
 }
 
@@ -623,7 +623,7 @@ pub fn unbalanced_tag_error_has_line_number_test() {
 
 pub fn unclosed_provider_error_has_line_number_test() {
   let content = "line 1\nline 2\n{{#provider \"openclaw\"}}no close"
-  let result = template.process_provider_blocks(content, "openclaw")
+  let result = template.process_provider_blocks(content, types.OpenClaw)
   should.be_error(result)
   let assert Error(error.TemplateError(line, msg)) = result
   should.equal(line, 3)

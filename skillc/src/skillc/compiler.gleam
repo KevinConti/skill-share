@@ -143,6 +143,7 @@ fn compile_for_provider(
   }
 
   Ok(CompiledSkill(
+    name: skill.name,
     provider: provider,
     skill_md: skill_md,
     scripts: scripts,
@@ -219,8 +220,7 @@ pub fn emit(
   let provider_str = types.provider_to_string(compiled.provider)
   let provider_dir = case compiled.provider {
     Codex -> output_dir <> "/codex/.agents/skills/" <> skill_name
-    OpenClaw -> output_dir <> "/" <> provider_str <> "/" <> skill_name
-    ClaudeCode -> output_dir <> "/" <> provider_str <> "/" <> skill_name
+    _ -> output_dir <> "/" <> provider_str <> "/" <> skill_name
   }
 
   use _ <- result.try(
@@ -328,19 +328,7 @@ fn format_openclaw(
   let meta_lines = case extra_pairs {
     [] -> []
     pairs -> {
-      let openclaw_lines =
-        list.filter_map(pairs, fn(pair) {
-          case pair {
-            #(yay.NodeStr(key), value) -> {
-              let val = node_to_yaml_value(value, 4)
-              case string.starts_with(val, "\n") {
-                True -> Ok("  " <> key <> ":" <> val)
-                False -> Ok("  " <> key <> ": " <> val)
-              }
-            }
-            _ -> Error(Nil)
-          }
-        })
+      let openclaw_lines = format_yaml_pairs(pairs, 4, "  ")
       ["metadata.openclaw:", ..openclaw_lines]
     }
   }
@@ -358,19 +346,7 @@ fn format_claude_code(
   let FrontmatterData(lines: frontmatter_lines, extra_pairs: extra_pairs) =
     build_base_frontmatter(skill, provider_meta)
 
-  let meta_lines =
-    list.filter_map(extra_pairs, fn(pair) {
-      case pair {
-        #(yay.NodeStr(key), value) -> {
-          let val = node_to_yaml_value(value, 2)
-          case string.starts_with(val, "\n") {
-            True -> Ok(key <> ":" <> val)
-            False -> Ok(key <> ": " <> val)
-          }
-        }
-        _ -> Error(Nil)
-      }
-    })
+  let meta_lines = format_yaml_pairs(extra_pairs, 2, "")
 
   let all_lines = list.flatten([frontmatter_lines, meta_lines, ["---"]])
 
@@ -393,23 +369,30 @@ fn format_codex(skill: types.Skill, body: String) -> String {
 fn generate_codex_yaml(provider_meta: yay.Node) -> String {
   case provider_meta {
     yay.NodeMap(pairs) -> {
-      let lines =
-        list.filter_map(pairs, fn(pair) {
-          case pair {
-            #(yay.NodeStr(key), value) -> {
-              let val = node_to_yaml_value(value, 2)
-              case string.starts_with(val, "\n") {
-                True -> Ok(key <> ":" <> val)
-                False -> Ok(key <> ": " <> val)
-              }
-            }
-            _ -> Error(Nil)
-          }
-        })
+      let lines = format_yaml_pairs(pairs, 2, "")
       string.join(lines, "\n") <> "\n"
     }
     _ -> ""
   }
+}
+
+fn format_yaml_pairs(
+  pairs: List(#(yay.Node, yay.Node)),
+  indent: Int,
+  prefix: String,
+) -> List(String) {
+  list.filter_map(pairs, fn(pair) {
+    case pair {
+      #(yay.NodeStr(key), value) -> {
+        let val = node_to_yaml_value(value, indent)
+        case string.starts_with(val, "\n") {
+          True -> Ok(prefix <> key <> ":" <> val)
+          False -> Ok(prefix <> key <> ": " <> val)
+        }
+      }
+      _ -> Error(Nil)
+    }
+  })
 }
 
 fn meta_string_or(meta: yay.Node, key: String, default: String) -> String {
@@ -462,19 +445,7 @@ fn serialize_yaml_seq(items: List(yay.Node), indent: Int) -> String {
       case item {
         yay.NodeMap(pairs) -> {
           // First key-value on same line as "- ", rest indented under it
-          let pair_lines =
-            list.filter_map(pairs, fn(pair) {
-              case pair {
-                #(yay.NodeStr(key), value) -> {
-                  let val = node_to_yaml_value(value, indent + 4)
-                  case string.starts_with(val, "\n") {
-                    True -> Ok(key <> ":" <> val)
-                    False -> Ok(key <> ": " <> val)
-                  }
-                }
-                _ -> Error(Nil)
-              }
-            })
+          let pair_lines = format_yaml_pairs(pairs, indent + 4, "")
           case pair_lines {
             [first, ..rest] ->
               prefix
@@ -495,19 +466,7 @@ fn serialize_yaml_seq(items: List(yay.Node), indent: Int) -> String {
 
 fn serialize_yaml_map(pairs: List(#(yay.Node, yay.Node)), indent: Int) -> String {
   let prefix = string.repeat(" ", indent)
-  let lines =
-    list.filter_map(pairs, fn(pair) {
-      case pair {
-        #(yay.NodeStr(key), value) -> {
-          let val = node_to_yaml_value(value, indent + 2)
-          case string.starts_with(val, "\n") {
-            True -> Ok(prefix <> key <> ":" <> val)
-            False -> Ok(prefix <> key <> ": " <> val)
-          }
-        }
-        _ -> Error(Nil)
-      }
-    })
+  let lines = format_yaml_pairs(pairs, indent + 2, prefix)
   "\n" <> string.join(lines, "\n")
 }
 

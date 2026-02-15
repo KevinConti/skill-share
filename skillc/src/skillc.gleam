@@ -127,7 +127,7 @@ fn do_compile(
   case compiler.compile(skill_dir, target) {
     Ok(compiled) -> {
       let warning_lines = format_warnings(compiled.warnings)
-      case compiler.emit(compiled, output_dir, types.extract_name(compiled)) {
+      case compiler.emit(compiled, output_dir, compiled.name) {
         Ok(_) ->
           Ok(warning_lines <> "Compiled " <> target <> " -> " <> output_dir)
         Error(err) -> Error("Error: " <> error.to_string(err))
@@ -175,7 +175,7 @@ fn emit_compiled_list(
   use lines <- result.try(
     list.try_map(compiled_list, fn(compiled) {
       let warning_lines = format_warnings(compiled.warnings)
-      case compiler.emit(compiled, output_dir, types.extract_name(compiled)) {
+      case compiler.emit(compiled, output_dir, compiled.name) {
         Ok(_) ->
           Ok(
             warning_lines
@@ -304,7 +304,7 @@ fn do_config_check(skill_dir: String) -> Result(String, String) {
           let missing =
             list.filter_map(statuses, fn(s) {
               case s {
-                config.Missing(field:) ->
+                config.MissingRequired(field:) ->
                   Ok("  MISSING: " <> field.name <> " - " <> field.description)
                 _ -> Error(Nil)
               }
@@ -312,8 +312,12 @@ fn do_config_check(skill_dir: String) -> Result(String, String) {
           let satisfied =
             list.filter_map(statuses, fn(s) {
               case s {
-                config.Satisfied(field:, ..) -> Ok("  OK: " <> field.name)
-                _ -> Error(Nil)
+                config.Provided(field:, ..) -> Ok("  OK: " <> field.name)
+                config.DefaultUsed(field:, default:) ->
+                  Ok("  OK: " <> field.name <> " (default: " <> default <> ")")
+                config.Skipped(field:) ->
+                  Ok("  OK: " <> field.name <> " (not set)")
+                config.MissingRequired(..) -> Error(Nil)
               }
             })
           case missing {
