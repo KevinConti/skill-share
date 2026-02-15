@@ -9,8 +9,8 @@ import skillc
 
 pub fn cli_version_test() {
   let assert Ok(output) = skillc.run(["version"])
-  should.be_true(string.contains(output, "skillc"))
-  should.be_true(string.contains(output, "1.0.0"))
+  should.be_true(string.contains(output, "skill-universe"))
+  should.be_true(string.contains(output, "1.1.0"))
 }
 
 // ============================================================================

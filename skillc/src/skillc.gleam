@@ -18,7 +18,7 @@ import skillc/types
 import skillc/version_constraint
 
 pub fn version() -> String {
-  "1.0.0"
+  "1.1.0"
 }
 
 pub fn main() {
@@ -43,7 +43,7 @@ pub fn run(args: List(String)) -> Result(String, String) {
     ["import", ..rest] -> run_import(rest)
     ["config", "init", skill_dir] -> do_config_init(skill_dir)
     ["config", "check", skill_dir] -> do_config_check(skill_dir)
-    ["version"] -> Ok("skillc " <> version())
+    ["version"] -> Ok("skill-universe " <> version())
     ["help"] -> Ok(usage_text())
     ["--help"] -> Ok(usage_text())
     _ -> Error(usage_text())
@@ -101,7 +101,15 @@ fn run_list(args: List(String)) -> Result(String, String) {
   case args {
     ["--installed", "--output", dir] -> do_list_installed(dir)
     ["--installed"] -> do_list_installed("./skills")
-    [repo] -> do_list_versions(repo)
+    [spec] -> {
+      // Parse spec to extract optional skill name: "owner/repo" or "owner/repo/skill-name"
+      let segments = string.split(spec, "/")
+      case segments {
+        [owner, repo, skill_name] ->
+          do_list_versions(owner <> "/" <> repo, Some(skill_name))
+        _ -> do_list_versions(spec, None)
+      }
+    }
     _ -> Error(usage_text())
   }
 }
@@ -238,8 +246,11 @@ fn do_install(
   |> result.map_error(fn(err) { "Error: " <> error.to_string(err) })
 }
 
-fn do_list_versions(repo: String) -> Result(String, String) {
-  registry.list_versions(repo)
+fn do_list_versions(
+  repo: String,
+  skill_name: option.Option(String),
+) -> Result(String, String) {
+  registry.list_versions(repo, skill_name)
   |> result.map_error(fn(err) { "Error: " <> error.to_string(err) })
 }
 
@@ -415,29 +426,37 @@ fn format_warnings(warnings: List(types.CompileWarning)) -> String {
 }
 
 fn usage_text() -> String {
-  "skillc " <> version() <> " - Cross-platform skill compiler
+  "skill-universe " <> version() <> " - Cross-platform skill compiler
 
 Usage:
-  skillc compile <skill-dir>                          Compile all providers
-  skillc compile <skill-dir> --target <provider>      Compile single provider
-  skillc compile <skill-dir> --providers <list>        Compile selected providers
-  skillc compile <skill-dir> --output <dir>           Compile with custom output
-  skillc check <skill-dir>                            Check supported providers
-  skillc init <skill-dir>                             Create a new skill
-  skillc import <source>                              Import a provider-specific skill
-  skillc import <source> --provider <provider>        Import with explicit provider
-  skillc import <source> --output <dir>               Import to custom output dir
-  skillc config init <skill-dir>                      Generate .env template
-  skillc config check <skill-dir>                     Check config env vars
-  skillc publish <skill-dir>                          Publish to GitHub Releases
-  skillc publish <skill-dir> --repo <owner/repo>      Publish to specific repo
-  skillc search <query>                               Search for skills
-  skillc install <owner/repo>                         Install a skill
-  skillc install <owner/repo> --target <provider>     Install for specific provider
-  skillc list <owner/repo>                            List available versions
-  skillc list --installed                             List installed skills
-  skillc version                                      Show version
-  skillc help                                         Show this help
+  skill-universe compile <skill-dir>                          Compile all providers
+  skill-universe compile <skill-dir> --target <provider>      Compile single provider
+  skill-universe compile <skill-dir> --providers <list>       Compile selected providers
+  skill-universe compile <skill-dir> --output <dir>           Compile with custom output
+  skill-universe check <skill-dir>                            Check supported providers
+  skill-universe init <skill-dir>                             Create a new skill
+  skill-universe import <source>                              Import a provider-specific skill
+  skill-universe import <source> --provider <provider>        Import with explicit provider
+  skill-universe import <source> --output <dir>               Import to custom output dir
+  skill-universe config init <skill-dir>                      Generate .env template
+  skill-universe config check <skill-dir>                     Check config env vars
+  skill-universe publish <skill-dir>                          Publish to GitHub Releases
+  skill-universe publish <skill-dir> --repo <owner/repo>      Publish to specific repo
+  skill-universe search <query>                               Search for skills
+  skill-universe install <owner/repo>                         Install a skill
+  skill-universe install <owner/repo/skill-name>              Install from multi-skill repo
+  skill-universe install <spec> --target <provider>           Install for specific provider
+  skill-universe list <owner/repo>                            List available versions
+  skill-universe list <owner/repo/skill-name>                 List versions for a skill
+  skill-universe list --installed                             List installed skills
+  skill-universe version                                      Show version
+  skill-universe help                                         Show this help
+
+Install spec formats:
+  owner/repo                    Latest release from repo
+  owner/repo@v1.0.0            Specific version from repo
+  owner/repo/skill-name         Latest release of skill from multi-skill repo
+  owner/repo/skill-name@v1.0.0  Specific version of skill from multi-skill repo
 
 Providers: openclaw, claude-code, codex"
 }

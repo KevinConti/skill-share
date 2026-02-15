@@ -26,7 +26,7 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
 
   let version_str = semver.to_string(skill.version)
-  let tag = "v" <> version_str
+  let tag = skill.name <> "-v" <> version_str
   let tarball_name = skill.name <> "-" <> version_str <> ".tar.gz"
   let tarball_path = platform.tmpdir() <> "/" <> tarball_name
 
@@ -132,7 +132,7 @@ pub fn search(query: String) -> Result(String, SkillError) {
   use _ <- result.try(require_gh())
   use output <- result.try(
     shell.exec(
-      "gh search repos --topic skillc-skill "
+      "gh search repos --topic skill-universe "
       <> shell_quote(query)
       <> " --json name,owner,description --jq "
       <> shell_quote(".[] | \"\\(.owner.login)/\\(.name) - \\(.description)\"")
@@ -157,8 +157,8 @@ pub fn install(
 ) -> Result(String, SkillError) {
   use _ <- result.try(require_gh())
 
-  // 1. Parse spec: "owner/repo" or "owner/repo@v1.0.0"
-  let #(repo, version) = parse_install_spec(spec)
+  // 1. Parse spec: "owner/repo", "owner/repo@v1.0", "owner/repo/skill", "owner/repo/skill@v1.0"
+  let #(repo, skill_name, version) = parse_install_spec(spec)
 
   // 2. Create temp directory
   let tmp_dir =
@@ -171,15 +171,14 @@ pub fn install(
     |> map_file_error(tmp_dir),
   )
 
-  // 3. Download release tarball
-  let version_flag = case version {
-    Some(v) -> " " <> shell_quote(v)
-    None -> " --latest"
-  }
+  // 3. Resolve the tag to download
+  use tag_flag <- result.try(resolve_install_tag(repo, skill_name, version))
+
+  // 4. Download release tarball
   use _ <- result.try(
     shell.exec(
       "gh release download"
-      <> version_flag
+      <> tag_flag
       <> " --repo "
       <> shell_quote(repo)
       <> " --pattern '*.tar.gz'"
@@ -191,7 +190,7 @@ pub fn install(
     }),
   )
 
-  // 4. Find the downloaded tarball
+  // 5. Find the downloaded tarball
   use tarball <- result.try(case simplifile.get_files(tmp_dir) {
     Ok(files) ->
       case list.find(files, fn(f) { string.ends_with(f, ".tar.gz") }) {
@@ -202,7 +201,7 @@ pub fn install(
     Error(_) -> Error(RegistryError("Failed to read temp directory"))
   })
 
-  // 5. Extract tarball
+  // 6. Extract tarball
   let extract_dir = tmp_dir <> "/extracted"
   use _ <- result.try(
     simplifile.create_directory_all(extract_dir)
@@ -217,10 +216,10 @@ pub fn install(
     }),
   )
 
-  // 6. Find the skill directory (directory containing skill.yaml)
+  // 7. Find the skill directory (directory containing skill.yaml)
   use skill_dir <- result.try(find_skill_dir(extract_dir))
 
-  // 7. Compile and emit
+  // 8. Compile and emit
   use result_msg <- result.try(case target {
     Some(t) -> {
       use compiled <- result.try(compiler.compile(skill_dir, t))
@@ -253,19 +252,72 @@ pub fn install(
     }
   })
 
-  // 8. Check dependencies
+  // 9. Check dependencies
   let dep_warnings = check_install_dependencies(skill_dir, output_dir)
 
-  // 9. Clean up
+  // 10. Clean up
   let _ = simplifile.delete(tmp_dir)
 
   Ok(result_msg <> dep_warnings)
 }
 
-pub fn parse_install_spec(spec: String) -> #(String, Option(String)) {
-  case string.split_once(spec, "@") {
-    Ok(#(repo, version)) -> #(repo, Some(version))
+pub fn parse_install_spec(
+  spec: String,
+) -> #(String, Option(String), Option(String)) {
+  // Split off @version first if present
+  let #(path, version) = case string.split_once(spec, "@") {
+    Ok(#(p, v)) -> #(p, Some(v))
     Error(_) -> #(spec, None)
+  }
+  // Split path into segments: owner/repo or owner/repo/skill-name
+  let segments = string.split(path, "/")
+  case segments {
+    [owner, repo, skill_name] ->
+      #(owner <> "/" <> repo, Some(skill_name), version)
+    _ -> #(path, None, version)
+  }
+}
+
+fn resolve_install_tag(
+  repo: String,
+  skill_name: Option(String),
+  version: Option(String),
+) -> Result(String, SkillError) {
+  case skill_name, version {
+    // owner/repo@v1.0.0 — backward compat, download exact tag
+    None, Some(v) -> Ok(" " <> shell_quote(v))
+    // owner/repo — backward compat, latest release
+    None, None -> Ok(" --latest")
+    // owner/repo/skill@v1.0.0 — download tag {skill}-{version}
+    Some(name), Some(v) -> Ok(" " <> shell_quote(name <> "-" <> v))
+    // owner/repo/skill — find latest tag matching {skill}-v*
+    Some(name), None -> {
+      use output <- result.try(
+        shell.exec(
+          "gh release list --repo "
+          <> shell_quote(repo)
+          <> " --json tagName --jq "
+          <> shell_quote(
+            ".[] | select(.tagName | startswith(\""
+            <> name
+            <> "-v\")) | .tagName",
+          ),
+        )
+        |> result.map_error(fn(e) {
+          RegistryError("Failed to list releases: " <> e)
+        }),
+      )
+      let tags =
+        string.split(string.trim(output), "\n")
+        |> list.filter(fn(t) { !string.is_empty(t) })
+      case tags {
+        [latest, ..] -> Ok(" " <> shell_quote(latest))
+        [] ->
+          Error(RegistryError(
+            "No releases found for skill '" <> name <> "' in " <> repo,
+          ))
+      }
+    }
   }
 }
 
@@ -302,23 +354,36 @@ fn find_skill_dir(base_dir: String) -> Result(String, SkillError) {
 // List
 // ============================================================================
 
-pub fn list_versions(repo: String) -> Result(String, SkillError) {
+pub fn list_versions(
+  repo: String,
+  skill_name: Option(String),
+) -> Result(String, SkillError) {
   use _ <- result.try(require_gh())
+  let jq_expr = case skill_name {
+    Some(name) ->
+      ".[] | select(.tagName | startswith(\""
+      <> name
+      <> "-v\")) | \"\\(.tagName)\\t\\(.publishedAt)\\(if .isLatest then \" (latest)\" else \"\" end)\""
+    None ->
+      ".[] | \"\\(.tagName)\\t\\(.publishedAt)\\(if .isLatest then \" (latest)\" else \"\" end)\""
+  }
   use output <- result.try(
     shell.exec(
       "gh release list --repo "
       <> shell_quote(repo)
       <> " --json tagName,publishedAt,isLatest --jq "
-      <> shell_quote(
-        ".[] | \"\\(.tagName)\\t\\(.publishedAt)\\(if .isLatest then \" (latest)\" else \"\" end)\"",
-      ),
+      <> shell_quote(jq_expr),
     )
     |> result.map_error(fn(e) {
       RegistryError("Failed to list versions: " <> e)
     }),
   )
+  let label = case skill_name {
+    Some(name) -> name <> " in " <> repo
+    None -> repo
+  }
   case string.is_empty(string.trim(output)) {
-    True -> Ok("No releases found for " <> repo)
+    True -> Ok("No releases found for " <> label)
     False -> Ok(output)
   }
 }

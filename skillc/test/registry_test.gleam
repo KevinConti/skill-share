@@ -40,21 +40,42 @@ pub fn parse_repo_url_with_whitespace_test() {
 // ============================================================================
 
 pub fn parse_install_spec_no_version_test() {
-  let #(repo, version) = registry.parse_install_spec("owner/repo")
+  let #(repo, skill_name, version) = registry.parse_install_spec("owner/repo")
   should.equal(repo, "owner/repo")
+  should.equal(skill_name, None)
   should.equal(version, None)
 }
 
 pub fn parse_install_spec_with_version_test() {
-  let #(repo, version) = registry.parse_install_spec("owner/repo@v1.0.0")
+  let #(repo, skill_name, version) =
+    registry.parse_install_spec("owner/repo@v1.0.0")
   should.equal(repo, "owner/repo")
+  should.equal(skill_name, None)
   should.equal(version, Some("v1.0.0"))
 }
 
 pub fn parse_install_spec_with_prerelease_test() {
-  let #(repo, version) = registry.parse_install_spec("owner/repo@v1.0.0-beta.1")
+  let #(repo, skill_name, version) =
+    registry.parse_install_spec("owner/repo@v1.0.0-beta.1")
   should.equal(repo, "owner/repo")
+  should.equal(skill_name, None)
   should.equal(version, Some("v1.0.0-beta.1"))
+}
+
+pub fn parse_install_spec_three_segment_test() {
+  let #(repo, skill_name, version) =
+    registry.parse_install_spec("owner/repo/my-skill")
+  should.equal(repo, "owner/repo")
+  should.equal(skill_name, Some("my-skill"))
+  should.equal(version, None)
+}
+
+pub fn parse_install_spec_three_segment_with_version_test() {
+  let #(repo, skill_name, version) =
+    registry.parse_install_spec("owner/repo/my-skill@v1.0.0")
+  should.equal(repo, "owner/repo")
+  should.equal(skill_name, Some("my-skill"))
+  should.equal(version, Some("v1.0.0"))
 }
 
 // ============================================================================

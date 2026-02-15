@@ -1,10 +1,10 @@
 {
-  "name": "skillc",
-  "version": "1.0.0",
+  "name": "skill-universe",
+  "version": "1.1.0",
   "type": "module",
   "description": "Cross-platform skill compiler",
   "bin": {
-    "skillc": "./bin/skillc.mjs"
+    "skill-universe": "./bin/skillc.mjs"
   },
   "scripts": {
     "build": "gleam build",

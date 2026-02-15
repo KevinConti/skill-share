@@ -64,6 +64,9 @@ vendor/
 /bin/
 /build/
 
+# Skills repo (separate repo: kevinconti/skills)
+skills/
+
 # Credentials (keep this template but don't commit actual credentials)
 credentials/
 *.pem

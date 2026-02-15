@@ -651,7 +651,7 @@ pub fn has_frontmatter_with_leading_whitespace_integration_test() {
 
 pub fn version_function_returns_expected_value_test() {
   let v = skillc.version()
-  should.equal(v, "1.0.0")
+  should.equal(v, "1.1.0")
 }
 
 // ============================================================================
