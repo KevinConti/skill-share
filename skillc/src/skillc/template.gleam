@@ -1,7 +1,7 @@
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import skillc/error.{type SkillError, TemplateError}
@@ -57,6 +57,7 @@ fn do_process_provider_blocks(
   original: String,
 ) -> Result(String, SkillError) {
   case string.split_once(remaining, "{{#provider ") {
+    Error(_) -> Ok(acc <> remaining)
     Ok(#(before, after_open)) -> {
       // Line number in original source at the opening tag
       let error_line =
@@ -67,33 +68,31 @@ fn do_process_provider_blocks(
             - string.length(remaining)
             + string.length(before),
         ))
-      case parse_provider_tag(after_open) {
-        Ok(#(providers, after_tag)) -> {
-          case find_closing_provider(after_tag, 1) {
-            Ok(#(block_content, after_close)) -> {
-              let should_include = list.contains(providers, target)
-              let new_acc = case should_include {
-                True ->
-                  acc
-                  <> before
-                  <> strip_surrounding_newlines(block_content)
-                  <> "\n"
-                False -> acc <> strip_trailing_newlines(before)
-              }
-              do_process_provider_blocks(after_close, target, new_acc, original)
-            }
-            Error(_) ->
-              Error(TemplateError(error_line, "Unclosed {{#provider}} block"))
-          }
-        }
-        Error(_) ->
-          Error(TemplateError(
-            error_line,
-            "Malformed {{#provider}} tag: missing provider names or closing }}",
-          ))
+      use #(providers, after_tag) <- result.try(
+        parse_provider_tag(after_open)
+        |> result.replace_error(TemplateError(
+          error_line,
+          "Malformed {{#provider}} tag: missing provider names or closing }}",
+        )),
+      )
+      use #(block_content, after_close) <- result.try(
+        find_closing_provider(after_tag, 1)
+        |> result.replace_error(TemplateError(
+          error_line,
+          "Unclosed {{#provider}} block",
+        )),
+      )
+      let should_include = list.contains(providers, target)
+      let new_acc = case should_include {
+        True ->
+          acc
+          <> before
+          <> strip_surrounding_newlines(block_content)
+          <> "\n"
+        False -> acc <> strip_trailing_newlines(before)
       }
+      do_process_provider_blocks(after_close, target, new_acc, original)
     }
-    Error(_) -> Ok(acc <> remaining)
   }
 }
 
@@ -255,22 +254,16 @@ fn do_render(
                 source_line,
               ))
               let value = resolve_path(path, ctx)
-              case is_truthy(value) {
-                True -> {
-                  use rendered_block <- result.try(render_tokens(
-                    block_content,
-                    ctx,
-                    original,
-                  ))
-                  do_render(
-                    rest,
-                    ctx,
-                    acc <> before <> rendered_block,
-                    original,
-                  )
-                }
-                False -> do_render(rest, ctx, acc <> before, original)
-              }
+              render_conditional_block(
+                is_truthy(value),
+                False,
+                block_content,
+                rest,
+                before,
+                ctx,
+                acc,
+                original,
+              )
             }
             "#unless " <> path -> {
               let path = string.trim(path)
@@ -280,22 +273,16 @@ fn do_render(
                 source_line,
               ))
               let value = resolve_path(path, ctx)
-              case is_truthy(value) {
-                True -> do_render(rest, ctx, acc <> before, original)
-                False -> {
-                  use rendered_block <- result.try(render_tokens(
-                    block_content,
-                    ctx,
-                    original,
-                  ))
-                  do_render(
-                    rest,
-                    ctx,
-                    acc <> before <> rendered_block,
-                    original,
-                  )
-                }
-              }
+              render_conditional_block(
+                is_truthy(value),
+                True,
+                block_content,
+                rest,
+                before,
+                ctx,
+                acc,
+                original,
+              )
             }
             "#each " <> path -> {
               let path = string.trim(path)
@@ -340,6 +327,29 @@ fn do_render(
   }
 }
 
+fn render_conditional_block(
+  is_truthy_result: Bool,
+  invert: Bool,
+  block_content: String,
+  rest: String,
+  before: String,
+  ctx: Value,
+  acc: String,
+  original: String,
+) -> Result(String, SkillError) {
+  let should_render = case invert {
+    True -> !is_truthy_result
+    False -> is_truthy_result
+  }
+  case should_render {
+    True -> {
+      use rendered_block <- result.try(render_tokens(block_content, ctx, original))
+      do_render(rest, ctx, acc <> before <> rendered_block, original)
+    }
+    False -> do_render(rest, ctx, acc <> before, original)
+  }
+}
+
 fn render_each_items(
   template: String,
   items: List(Value),
@@ -367,8 +377,8 @@ fn render_each_items(
       // Item-specific keys come first (higher priority in list.find lookup)
       let item_keys = case item {
         VDict(props) ->
-          list.append([#("this", item)], list.append(props, special_keys))
-        _ -> list.append([#("this", item)], special_keys)
+          [#("this", item), ..list.append(props, special_keys)]
+        _ -> [#("this", item), ..special_keys]
       }
       let item_ctx = VDict(list.append(item_keys, parent_props))
       use rendered <- result.try(render_tokens(template, item_ctx, original))
@@ -471,7 +481,7 @@ fn do_find_block_end(
   }
 }
 
-fn find_position(haystack: String, needle: String) -> option.Option(Int) {
+fn find_position(haystack: String, needle: String) -> Option(Int) {
   do_find_position(haystack, needle, 0)
 }
 
@@ -479,7 +489,7 @@ fn do_find_position(
   haystack: String,
   needle: String,
   pos: Int,
-) -> option.Option(Int) {
+) -> Option(Int) {
   case string.starts_with(haystack, needle) {
     True -> Some(pos)
     False -> {
@@ -503,16 +513,8 @@ fn resolve_path(path: String, ctx: Value) -> Value {
 fn resolve_parts(parts: List(String), ctx: Value) -> Value {
   case parts {
     [] -> ctx
-    ["this"] ->
-      case lookup_key("this", ctx) {
-        VNil -> ctx
-        value -> value
-      }
     ["this", ..rest] -> {
-      let this_val = case lookup_key("this", ctx) {
-        VNil -> ctx
-        value -> value
-      }
+      let this_val = resolve_this(ctx)
       resolve_parts(rest, this_val)
     }
     ["@index"] -> lookup_key("@index", ctx)
@@ -528,11 +530,18 @@ fn resolve_parts(parts: List(String), ctx: Value) -> Value {
   }
 }
 
+fn resolve_this(ctx: Value) -> Value {
+  case lookup_key("this", ctx) {
+    VNil -> ctx
+    value -> value
+  }
+}
+
 fn lookup_key(key: String, ctx: Value) -> Value {
   case ctx {
     VDict(props) ->
-      case list.find(props, fn(p) { p.0 == key }) {
-        Ok(#(_, value)) -> value
+      case list.key_find(props, key) {
+        Ok(value) -> value
         Error(_) -> VNil
       }
     _ -> VNil

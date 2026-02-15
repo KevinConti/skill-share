@@ -5,7 +5,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import simplifile
-import skillc/error.{type SkillError, FileError, ProviderError}
+import skillc/error.{type SkillError, ProviderError, map_file_error}
 import skillc/parser
 import skillc/provider
 import skillc/template
@@ -22,7 +22,7 @@ pub fn compile(
   // 1. Parse skill.yaml
   use skill_content <- result.try(
     simplifile.read(skill_dir <> "/skill.yaml")
-    |> result.map_error(fn(e) { FileError(skill_dir <> "/skill.yaml", e) }),
+    |> map_file_error(skill_dir <> "/skill.yaml"),
   )
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
 
@@ -33,7 +33,7 @@ pub fn compile(
   let metadata_path = skill_dir <> "/providers/" <> target <> "/metadata.yaml"
   use meta_content <- result.try(
     simplifile.read(metadata_path)
-    |> result.map_error(fn(e) { FileError(metadata_path, e) }),
+    |> map_file_error(metadata_path),
   )
   use provider_meta <- result.try(parser.parse_metadata_yaml(
     meta_content,
@@ -43,7 +43,7 @@ pub fn compile(
   // 4. Read INSTRUCTIONS.md
   use instructions_content <- result.try(
     simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
-    |> result.map_error(fn(e) { FileError(skill_dir <> "/INSTRUCTIONS.md", e) }),
+    |> map_file_error(skill_dir <> "/INSTRUCTIONS.md"),
   )
 
   // 4b. Check for frontmatter in INSTRUCTIONS.md (generates warning)
@@ -139,13 +139,13 @@ pub fn emit(
 
   use _ <- result.try(
     simplifile.create_directory_all(provider_dir)
-    |> result.map_error(fn(e) { FileError(provider_dir, e) }),
+    |> map_file_error(provider_dir),
   )
 
   // Write SKILL.md
   use _ <- result.try(
     simplifile.write(provider_dir <> "/SKILL.md", compiled.skill_md)
-    |> result.map_error(fn(e) { FileError(provider_dir <> "/SKILL.md", e) }),
+    |> map_file_error(provider_dir <> "/SKILL.md"),
   )
 
   // Copy scripts
@@ -163,7 +163,7 @@ pub fn emit(
       let agents_dir = provider_dir <> "/agents"
       use _ <- result.try(
         simplifile.create_directory_all(agents_dir)
-        |> result.map_error(fn(e) { FileError(agents_dir, e) }),
+        |> map_file_error(agents_dir),
       )
       // openai.yaml is generated from provider metadata - for now emit a placeholder
       Ok(Nil)
@@ -185,7 +185,7 @@ fn format_skill_md(
   case target {
     "openclaw" -> format_openclaw(skill, provider_meta, body)
     "claude-code" -> format_claude_code(skill, provider_meta, body)
-    "codex" | _ -> format_generic(skill, body)
+    _ -> format_generic(skill, body)
   }
 }
 
@@ -478,7 +478,7 @@ fn copy_file_list(
     _ -> {
       use _ <- result.try(
         simplifile.create_directory_all(dest_dir)
-        |> result.map_error(fn(e) { FileError(dest_dir, e) }),
+        |> map_file_error(dest_dir),
       )
       list.try_each(files, fn(f) {
         let dest = dest_dir <> "/" <> f.relative_path
@@ -486,10 +486,10 @@ fn copy_file_list(
         let parent = get_parent_dir(dest)
         use _ <- result.try(
           simplifile.create_directory_all(parent)
-          |> result.map_error(fn(e) { FileError(parent, e) }),
+          |> map_file_error(parent),
         )
         simplifile.copy_file(f.src, dest)
-        |> result.map_error(fn(e) { FileError(f.src, e) })
+        |> map_file_error(f.src)
       })
     }
   }

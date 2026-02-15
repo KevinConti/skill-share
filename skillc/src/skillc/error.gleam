@@ -1,4 +1,5 @@
 import gleam/int
+import gleam/result
 import simplifile
 
 pub type SkillError {
@@ -24,4 +25,11 @@ pub fn to_string(error: SkillError) -> String {
     FileError(path, error) ->
       "File error at " <> path <> ": " <> simplifile.describe_error(error)
   }
+}
+
+pub fn map_file_error(
+  result: Result(a, simplifile.FileError),
+  path: String,
+) -> Result(a, SkillError) {
+  result.map_error(result, fn(e) { FileError(path, e) })
 }
