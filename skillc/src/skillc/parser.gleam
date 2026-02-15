@@ -159,14 +159,15 @@ pub fn parse_metadata_yaml(
 }
 
 pub fn validate_semver(version: String) -> Result(Nil, SkillError) {
-  // Strip pre-release and build metadata before splitting
-  let base = case string.split_once(version, "-") {
-    Ok(#(base, _)) -> base
-    Error(_) ->
-      case string.split_once(version, "+") {
-        Ok(#(base, _)) -> base
-        Error(_) -> version
-      }
+  // Strip build metadata first (after +), then pre-release (after -)
+  // Must handle + before - because build metadata can contain dashes
+  let without_build = case string.split_once(version, "+") {
+    Ok(#(before, _)) -> before
+    Error(_) -> version
+  }
+  let base = case string.split_once(without_build, "-") {
+    Ok(#(before, _)) -> before
+    Error(_) -> without_build
   }
   let parts = string.split(base, ".")
   case parts {
@@ -203,6 +204,10 @@ fn is_numeric(s: String) -> Bool {
         || c == "9"
       })
   }
+}
+
+pub fn has_frontmatter(content: String) -> Bool {
+  string.starts_with(string.trim_start(content), "---")
 }
 
 fn yaml_error_to_skill_error(file: String, err: yay.YamlError) -> SkillError {

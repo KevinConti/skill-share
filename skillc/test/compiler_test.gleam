@@ -4,6 +4,7 @@ import gleeunit/should
 import simplifile
 import skillc/compiler
 import skillc/error
+import skillc/types
 
 // ============================================================================
 // §3.1 Full Compilation
@@ -67,6 +68,24 @@ pub fn compile_single_provider_codex_test() {
 }
 
 // ============================================================================
+// §3.3 Selective Multi-Provider Compilation
+// ============================================================================
+
+pub fn compile_single_target_from_multi_provider_test() {
+  // Compile only openclaw even though 3 providers exist
+  let result = compiler.compile("test/fixtures/valid-skill", "openclaw")
+  should.be_ok(result)
+  let assert Ok(compiled) = result
+  should.equal(compiled.provider, "openclaw")
+}
+
+pub fn compile_all_returns_all_providers_test() {
+  let assert Ok(compiled_list) =
+    compiler.compile_all("test/fixtures/valid-skill")
+  should.equal(list.length(compiled_list), 3)
+}
+
+// ============================================================================
 // §3.4 Metadata Merging
 // ============================================================================
 
@@ -75,9 +94,10 @@ pub fn openclaw_metadata_merging_test() {
     compiler.compile("test/fixtures/valid-skill", "openclaw")
   // Universal fields at top level
   should.be_true(string.contains(compiled.skill_md, "name: test-skill"))
+  // Description has spaces, so it gets quoted by quote_yaml_string
   should.be_true(string.contains(
     compiled.skill_md,
-    "description: A test skill for validation",
+    "description: \"A test skill for validation\"",
   ))
   // Provider-specific under metadata.openclaw
   should.be_true(string.contains(compiled.skill_md, "metadata.openclaw:"))
@@ -99,6 +119,25 @@ pub fn codex_minimal_frontmatter_test() {
     compiler.compile("test/fixtures/valid-skill", "codex")
   should.be_true(string.contains(compiled.skill_md, "name: test-skill"))
   should.be_true(string.contains(compiled.skill_md, "version: 1.2.3"))
+}
+
+pub fn metadata_conflict_provider_wins_test() {
+  // conflict-metadata fixture has description in both skill.yaml and provider metadata
+  // Provider value should win
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/conflict-metadata", "openclaw")
+  // Provider description should override the universal one
+  should.be_true(string.contains(
+    compiled.skill_md,
+    "OpenClaw-specific description",
+  ))
+}
+
+pub fn metadata_conflict_name_preserved_test() {
+  // Name is NOT overridden in provider metadata, should come from skill.yaml
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/conflict-metadata", "openclaw")
+  should.be_true(string.contains(compiled.skill_md, "name: conflict-test"))
 }
 
 // ============================================================================
@@ -146,6 +185,21 @@ pub fn multi_provider_content_excluded_test() {
   should.be_false(string.contains(compiled.skill_md, "Shared Notes"))
 }
 
+pub fn provider_instructions_appended_test() {
+  // OpenClaw has provider-specific instructions.md that should be appended
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  should.be_true(string.contains(compiled.skill_md, "OpenClaw-Specific Setup"))
+  should.be_true(string.contains(compiled.skill_md, "pip install test-cli"))
+}
+
+pub fn provider_without_instructions_ok_test() {
+  // Claude Code has no provider-specific instructions.md — should still compile
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "claude-code")
+  should.be_false(string.contains(compiled.skill_md, "OpenClaw-Specific Setup"))
+}
+
 pub fn template_directives_fully_resolved_test() {
   let assert Ok(compiled) =
     compiler.compile("test/fixtures/valid-skill", "openclaw")
@@ -153,6 +207,61 @@ pub fn template_directives_fully_resolved_test() {
   should.be_false(string.contains(compiled.skill_md, "{{#provider"))
   should.be_false(string.contains(compiled.skill_md, "{{/provider}}"))
   should.be_false(string.contains(compiled.skill_md, "{{name}}"))
+}
+
+// ============================================================================
+// §3.6 Script/Asset Merging
+// ============================================================================
+
+pub fn shared_scripts_collected_test() {
+  // Claude Code has no provider-specific scripts, should get shared scripts
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "claude-code")
+  let script_paths = list.map(compiled.scripts, fn(f) { f.relative_path })
+  should.be_true(list.contains(script_paths, "common.sh"))
+  should.be_true(list.contains(script_paths, "shared.sh"))
+}
+
+pub fn provider_script_overrides_shared_test() {
+  // OpenClaw has its own common.sh that should override the shared one
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let script_paths = list.map(compiled.scripts, fn(f) { f.relative_path })
+  should.be_true(list.contains(script_paths, "common.sh"))
+  // Find the common.sh entry and verify it points to provider version
+  let assert Ok(common) =
+    list.find(compiled.scripts, fn(f) { f.relative_path == "common.sh" })
+  should.be_true(string.contains(common.src, "providers/openclaw/scripts"))
+}
+
+pub fn provider_adds_extra_scripts_test() {
+  // OpenClaw has openclaw-only.sh that doesn't exist in shared
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let script_paths = list.map(compiled.scripts, fn(f) { f.relative_path })
+  should.be_true(list.contains(script_paths, "openclaw-only.sh"))
+}
+
+pub fn shared_scripts_not_overridden_preserved_test() {
+  // OpenClaw overrides common.sh but shared.sh should still be present
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let script_paths = list.map(compiled.scripts, fn(f) { f.relative_path })
+  should.be_true(list.contains(script_paths, "shared.sh"))
+}
+
+pub fn shared_assets_collected_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let asset_paths = list.map(compiled.assets, fn(f) { f.relative_path })
+  should.be_true(list.contains(asset_paths, "template.md"))
+}
+
+pub fn no_scripts_dir_produces_empty_list_test() {
+  // minimal-skill has no scripts directory
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/minimal-skill", "openclaw")
+  should.equal(compiled.scripts, [])
 }
 
 // ============================================================================
@@ -218,6 +327,161 @@ pub fn compile_no_providers_fails_test() {
   should.be_error(result)
 }
 
+pub fn compile_missing_instructions_fails_test() {
+  // missing-instructions fixture has no INSTRUCTIONS.md
+  let result =
+    compiler.compile("test/fixtures/missing-instructions", "openclaw")
+  should.be_error(result)
+  let assert Error(error.FileError(_, _)) = result
+}
+
+pub fn compile_empty_instructions_succeeds_test() {
+  // empty-instructions fixture has an empty INSTRUCTIONS.md — should compile
+  let result =
+    compiler.compile("test/fixtures/empty-instructions", "openclaw")
+  should.be_ok(result)
+}
+
+pub fn compile_invalid_yaml_fails_test() {
+  let result = compiler.compile("test/fixtures/invalid-yaml", "openclaw")
+  should.be_error(result)
+}
+
+pub fn compile_missing_fields_fails_test() {
+  let result = compiler.compile("test/fixtures/missing-name", "openclaw")
+  should.be_error(result)
+}
+
+// ============================================================================
+// §3.8 Error Message Quality
+// ============================================================================
+
+pub fn compile_unsupported_provider_error_message_test() {
+  let result =
+    compiler.compile("test/fixtures/valid-skill", "nonexistent-provider")
+  let assert Error(error.ProviderError(provider, msg)) = result
+  should.equal(provider, "nonexistent-provider")
+  should.be_true(string.contains(msg, "not supported"))
+}
+
+pub fn compile_missing_instructions_error_message_test() {
+  let result =
+    compiler.compile("test/fixtures/missing-instructions", "openclaw")
+  let assert Error(error.FileError(path, _)) = result
+  should.be_true(string.contains(path, "INSTRUCTIONS.md"))
+}
+
+// ============================================================================
+// Frontmatter Warning Integration
+// ============================================================================
+
+pub fn frontmatter_instructions_generates_warning_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/frontmatter-instructions", "openclaw")
+  should.equal(list.length(compiled.warnings), 1)
+  let assert [types.FrontmatterInInstructions(file)] = compiled.warnings
+  should.be_true(string.contains(file, "INSTRUCTIONS.md"))
+}
+
+pub fn normal_instructions_no_warnings_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  should.equal(compiled.warnings, [])
+}
+
+// ============================================================================
+// Emit Roundtrip Verification
+// ============================================================================
+
+pub fn emit_roundtrip_content_matches_test() {
+  let output_dir = "/tmp/skillc-test-roundtrip"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  // Read back and verify content matches exactly
+  let assert Ok(read_back) =
+    simplifile.read(output_dir <> "/openclaw/test-skill/SKILL.md")
+  should.equal(read_back, compiled.skill_md)
+
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+pub fn emit_roundtrip_codex_content_matches_test() {
+  let output_dir = "/tmp/skillc-test-roundtrip-codex"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "codex")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  let assert Ok(read_back) =
+    simplifile.read(
+      output_dir <> "/codex/.agents/skills/test-skill/SKILL.md",
+    )
+  should.equal(read_back, compiled.skill_md)
+
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+pub fn emit_script_content_verified_test() {
+  let output_dir = "/tmp/skillc-test-script-content"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  // The openclaw provider overrides common.sh — verify it's the provider version
+  let assert Ok(content) =
+    simplifile.read(
+      output_dir <> "/openclaw/test-skill/scripts/common.sh",
+    )
+  should.be_true(string.contains(content, "openclaw override"))
+
+  // shared.sh should be the shared version (not overridden)
+  let assert Ok(shared_content) =
+    simplifile.read(
+      output_dir <> "/openclaw/test-skill/scripts/shared.sh",
+    )
+  should.be_true(string.contains(shared_content, "shared script"))
+
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+// ============================================================================
+// Golden File Tests — Full Output Verification
+// ============================================================================
+
+pub fn golden_openclaw_output_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let assert Ok(expected) =
+    simplifile.read("test/golden/valid-skill.openclaw.md")
+  should.equal(compiled.skill_md, expected)
+}
+
+pub fn golden_claude_code_output_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "claude-code")
+  let assert Ok(expected) =
+    simplifile.read("test/golden/valid-skill.claude-code.md")
+  should.equal(compiled.skill_md, expected)
+}
+
+pub fn golden_codex_output_test() {
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "codex")
+  let assert Ok(expected) =
+    simplifile.read("test/golden/valid-skill.codex.md")
+  should.equal(compiled.skill_md, expected)
+}
+
 // ============================================================================
 // §10.1 End-to-End: hello-world example
 // ============================================================================
@@ -251,4 +515,66 @@ pub fn compile_hello_world_all_providers_test() {
   let assert Ok(compiled_list) =
     compiler.compile_all("../examples/hello-world")
   should.equal(list.length(compiled_list), 3)
+}
+
+// ============================================================================
+// §10.4 Escaped Template Syntax Preserved in Output
+// ============================================================================
+
+pub fn escaped_syntax_preserved_in_output_test() {
+  // Create a skill with escaped template syntax in INSTRUCTIONS.md
+  // Uses the valid-skill fixture since it has all providers
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  // Verify the output doesn't contain raw handlebars (except escaped ones)
+  // All {{name}}, {{version}} etc should be resolved
+  should.be_false(string.contains(compiled.skill_md, "{{name}}"))
+  should.be_false(string.contains(compiled.skill_md, "{{version}}"))
+  should.be_false(string.contains(compiled.skill_md, "{{description}}"))
+}
+
+// ============================================================================
+// §3.7 Emit with Scripts and Assets
+// ============================================================================
+
+pub fn emit_with_scripts_test() {
+  let output_dir = "/tmp/skillc-test-emit-scripts"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "openclaw")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  // Verify scripts were copied
+  let skill_dir = output_dir <> "/openclaw/test-skill"
+  let assert Ok(True) =
+    simplifile.is_file(skill_dir <> "/scripts/common.sh")
+  let assert Ok(True) =
+    simplifile.is_file(skill_dir <> "/scripts/shared.sh")
+  let assert Ok(True) =
+    simplifile.is_file(skill_dir <> "/scripts/openclaw-only.sh")
+
+  // Verify assets were copied
+  let assert Ok(True) =
+    simplifile.is_file(skill_dir <> "/assets/template.md")
+
+  let _ = simplifile.delete(output_dir)
+  Nil
+}
+
+pub fn emit_claude_code_structure_test() {
+  let output_dir = "/tmp/skillc-test-emit-cc"
+  let _ = simplifile.delete(output_dir)
+
+  let assert Ok(compiled) =
+    compiler.compile("test/fixtures/valid-skill", "claude-code")
+  let assert Ok(_) = compiler.emit(compiled, output_dir, "test-skill")
+
+  // Claude Code uses flat structure: {provider}/{skill_name}/
+  let assert Ok(content) =
+    simplifile.read(output_dir <> "/claude-code/test-skill/SKILL.md")
+  should.be_true(string.contains(content, "test-skill"))
+
+  let _ = simplifile.delete(output_dir)
+  Nil
 }

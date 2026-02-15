@@ -40,12 +40,17 @@ pub type ProviderMeta {
   ProviderMeta(provider_name: String, raw: String)
 }
 
+pub type CompileWarning {
+  FrontmatterInInstructions(file: String)
+}
+
 pub type CompiledSkill {
   CompiledSkill(
     provider: String,
     skill_md: String,
     scripts: List(FileCopy),
     assets: List(FileCopy),
+    warnings: List(CompileWarning),
   )
 }
 

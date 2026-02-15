@@ -1,6 +1,7 @@
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
+import skillc/error
 import skillc/template
 import skillc/types.{type Skill, ConfigField, Skill, SkillMetadata}
 import yay
@@ -12,7 +13,7 @@ import yay
 pub fn provider_block_included_test() {
   let content =
     "before\n{{#provider \"openclaw\"}}openclaw content{{/provider}}\nafter"
-  let result = template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result) = template.process_provider_blocks(content, "openclaw")
   should.be_true(string.contains(result, "openclaw content"))
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
@@ -21,7 +22,8 @@ pub fn provider_block_included_test() {
 pub fn provider_block_excluded_test() {
   let content =
     "before\n{{#provider \"openclaw\"}}openclaw content{{/provider}}\nafter"
-  let result = template.process_provider_blocks(content, "claude-code")
+  let assert Ok(result) =
+    template.process_provider_blocks(content, "claude-code")
   should.be_false(string.contains(result, "openclaw content"))
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
@@ -30,8 +32,10 @@ pub fn provider_block_excluded_test() {
 pub fn multi_provider_block_included_test() {
   let content =
     "{{#provider \"openclaw\" \"codex\"}}shared content{{/provider}}"
-  let result_openclaw = template.process_provider_blocks(content, "openclaw")
-  let result_codex = template.process_provider_blocks(content, "codex")
+  let assert Ok(result_openclaw) =
+    template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result_codex) =
+    template.process_provider_blocks(content, "codex")
   should.be_true(string.contains(result_openclaw, "shared content"))
   should.be_true(string.contains(result_codex, "shared content"))
 }
@@ -39,13 +43,15 @@ pub fn multi_provider_block_included_test() {
 pub fn multi_provider_block_excluded_test() {
   let content =
     "{{#provider \"openclaw\" \"codex\"}}shared content{{/provider}}"
-  let result = template.process_provider_blocks(content, "claude-code")
+  let assert Ok(result) =
+    template.process_provider_blocks(content, "claude-code")
   should.be_false(string.contains(result, "shared content"))
 }
 
 pub fn empty_provider_block_test() {
   let content = "before{{#provider \"openclaw\"}}{{/provider}}after"
-  let result = template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result) =
+    template.process_provider_blocks(content, "openclaw")
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
 }
@@ -53,9 +59,23 @@ pub fn empty_provider_block_test() {
 pub fn nested_provider_blocks_test() {
   let content =
     "{{#provider \"openclaw\"}}outer{{#provider \"openclaw\"}}inner{{/provider}}end{{/provider}}"
-  let result = template.process_provider_blocks(content, "openclaw")
+  let assert Ok(result) =
+    template.process_provider_blocks(content, "openclaw")
   should.be_true(string.contains(result, "outer"))
   should.be_true(string.contains(result, "inner"))
+}
+
+pub fn unclosed_provider_block_returns_error_test() {
+  let content = "before\n{{#provider \"openclaw\"}}no closing tag"
+  let result = template.process_provider_blocks(content, "openclaw")
+  should.be_error(result)
+}
+
+pub fn malformed_provider_tag_returns_error_test() {
+  // Missing closing }} on the tag
+  let content = "{{#provider \"openclaw\" some content"
+  let result = template.process_provider_blocks(content, "openclaw")
+  should.be_error(result)
 }
 
 // ============================================================================
@@ -122,6 +142,20 @@ pub fn undefined_variable_renders_empty_test() {
   should.equal(output, "beforeafter")
 }
 
+pub fn nested_metadata_access_test() {
+  // Access meta.requires.bins (nested path)
+  let result =
+    template.render_template(
+      "{{#each meta.requires.bins}}{{this}} {{/each}}",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "python3"))
+  should.be_true(string.contains(output, "curl"))
+}
+
 // ============================================================================
 // §2.3 Standard Conditionals
 // ============================================================================
@@ -150,6 +184,45 @@ pub fn unless_block_test() {
   should.be_true(string.contains(output, "no field"))
 }
 
+pub fn if_block_falsy_path_test() {
+  // #if on a non-existent variable should exclude the block
+  let result =
+    template.render_template(
+      "before{{#if meta.nonexistent}}hidden{{/if}}after",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
+}
+
+pub fn if_block_false_bool_test() {
+  // #if on a false boolean should exclude the block
+  let skill = Skill(
+    ..test_skill(),
+    config: [
+      ConfigField(
+        name: "test",
+        description: "test",
+        required: False,
+        secret: False,
+        default: None,
+      ),
+    ],
+  )
+  let result =
+    template.render_template(
+      "{{#each config}}{{#if this.required}}req{{/if}}{{#unless this.required}}opt{{/unless}}{{/each}}",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "opt"))
+  should.be_false(string.contains(output, "req"))
+}
+
 pub fn each_block_test() {
   let result =
     template.render_template(
@@ -160,6 +233,62 @@ pub fn each_block_test() {
     )
   let assert Ok(output) = result
   should.be_true(string.contains(output, "api_key"))
+}
+
+pub fn each_block_at_index_test() {
+  let skill = Skill(
+    ..test_skill(),
+    config: [
+      ConfigField(name: "a", description: "", required: False, secret: False, default: None),
+      ConfigField(name: "b", description: "", required: False, secret: False, default: None),
+    ],
+  )
+  let result =
+    template.render_template(
+      "{{#each config}}{{@index}}:{{this.name}} {{/each}}",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "0:a"))
+  should.be_true(string.contains(output, "1:b"))
+}
+
+pub fn each_block_at_first_last_test() {
+  let skill = Skill(
+    ..test_skill(),
+    config: [
+      ConfigField(name: "first", description: "", required: False, secret: False, default: None),
+      ConfigField(name: "middle", description: "", required: False, secret: False, default: None),
+      ConfigField(name: "last", description: "", required: False, secret: False, default: None),
+    ],
+  )
+  let result =
+    template.render_template(
+      "{{#each config}}{{#if @first}}[FIRST]{{/if}}{{#if @last}}[LAST]{{/if}}{{this.name}} {{/each}}",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "[FIRST]first"))
+  should.be_true(string.contains(output, "[LAST]last"))
+  should.be_false(string.contains(output, "[FIRST]middle"))
+  should.be_false(string.contains(output, "[LAST]middle"))
+}
+
+pub fn each_empty_list_test() {
+  let skill = Skill(..test_skill(), config: [])
+  let result =
+    template.render_template(
+      "before{{#each config}}item{{/each}}after",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.equal(output, "beforeafter")
 }
 
 // ============================================================================
@@ -248,6 +377,126 @@ pub fn unclosed_provider_block_fails_test() {
       test_provider_meta(),
     )
   should.be_error(result)
+}
+
+pub fn unclosed_each_block_fails_test() {
+  let result =
+    template.render_template(
+      "{{#each config}}no closing tag",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  should.be_error(result)
+}
+
+pub fn unclosed_unless_block_fails_test() {
+  let result =
+    template.render_template(
+      "{{#unless meta.emoji}}no closing tag",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  should.be_error(result)
+}
+
+// ============================================================================
+// §2.2 Template Context: dependencies and metadata
+// ============================================================================
+
+pub fn each_dependencies_test() {
+  let skill = Skill(
+    ..test_skill(),
+    dependencies: [
+      types.Dependency(name: "helper-skill", version: "^1.0.0", optional: False),
+      types.Dependency(name: "extra-skill", version: "~2.0.0", optional: True),
+    ],
+  )
+  let result =
+    template.render_template(
+      "{{#each dependencies}}{{this.name}}({{this.version}}) {{/each}}",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "helper-skill(^1.0.0)"))
+  should.be_true(string.contains(output, "extra-skill(~2.0.0)"))
+}
+
+pub fn metadata_author_in_context_test() {
+  let result =
+    template.render_template(
+      "Author: {{metadata.author}}",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "Author: Test"))
+}
+
+pub fn metadata_tags_in_context_test() {
+  let skill = Skill(
+    ..test_skill(),
+    metadata: Some(SkillMetadata(
+      author: None,
+      author_email: None,
+      tags: ["web", "api"],
+    )),
+  )
+  let result =
+    template.render_template(
+      "{{#each metadata.tags}}{{this}} {{/each}}",
+      "openclaw",
+      skill,
+      test_provider_meta(),
+    )
+  let assert Ok(output) = result
+  should.be_true(string.contains(output, "web"))
+  should.be_true(string.contains(output, "api"))
+}
+
+// ============================================================================
+// §2.6 Error messages include line numbers
+// ============================================================================
+
+pub fn template_error_has_line_number_test() {
+  // The unclosed #if is on line 3
+  let result =
+    template.render_template(
+      "line 1\nline 2\n{{#if meta.emoji}}unclosed",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  should.be_error(result)
+  let assert Error(error.TemplateError(line, msg)) = result
+  should.equal(line, 3)
+  should.be_true(string.contains(msg, "Unclosed"))
+}
+
+pub fn unbalanced_tag_error_has_line_number_test() {
+  let result =
+    template.render_template(
+      "line 1\nline 2\nline 3\n{{unbalanced",
+      "openclaw",
+      test_skill(),
+      test_provider_meta(),
+    )
+  should.be_error(result)
+  let assert Error(error.TemplateError(line, _msg)) = result
+  should.equal(line, 4)
+}
+
+pub fn unclosed_provider_error_has_line_number_test() {
+  let content = "line 1\nline 2\n{{#provider \"openclaw\"}}no close"
+  let result = template.process_provider_blocks(content, "openclaw")
+  should.be_error(result)
+  let assert Error(error.TemplateError(line, msg)) = result
+  should.equal(line, 3)
+  should.be_true(string.contains(msg, "Unclosed"))
 }
 
 // ============================================================================

@@ -1,0 +1,5 @@
+emoji: "🔧"
+description: OpenClaw-specific description
+requires:
+  bins: []
+install: []

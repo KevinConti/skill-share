@@ -1,3 +1,4 @@
+import gleam/list
 import gleeunit/should
 import skillc/provider
 
@@ -69,9 +70,26 @@ pub fn validate_provider_unsupported_test() {
 }
 
 pub fn unknown_provider_warning_test() {
-  // provider-no-metadata has openclaw dir but without metadata.yaml
-  // The valid-skill fixture only has known providers, so no warnings
+  // valid-skill fixture only has known providers, so no warnings
   let assert Ok(discovery) =
     provider.discover_providers("test/fixtures/valid-skill")
   should.equal(discovery.warnings, [])
+}
+
+pub fn unknown_provider_generates_warning_test() {
+  // unknown-provider fixture has "my-custom-provider" which is not in known list
+  let assert Ok(discovery) =
+    provider.discover_providers("test/fixtures/unknown-provider")
+  // Should still discover both providers
+  should.be_true(
+    list.contains(discovery.providers, "my-custom-provider"),
+  )
+  should.be_true(
+    list.contains(discovery.providers, "openclaw"),
+  )
+  // Should have exactly one warning for the unknown provider
+  should.equal(
+    discovery.warnings,
+    [provider.UnknownProvider("my-custom-provider")],
+  )
 }

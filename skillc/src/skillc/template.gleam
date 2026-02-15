@@ -18,7 +18,7 @@ pub fn render_template(
   skill: Skill,
   provider_meta: yay.Node,
 ) -> Result(String, SkillError) {
-  let processed = process_provider_blocks(content, target)
+  use processed <- result.try(process_provider_blocks(content, target))
   let context = build_context(skill, target, provider_meta)
   render(processed, context)
 }
@@ -41,7 +41,10 @@ pub type Value {
 // Phase 1: Provider block processing
 // ============================================================================
 
-pub fn process_provider_blocks(content: String, target: String) -> String {
+pub fn process_provider_blocks(
+  content: String,
+  target: String,
+) -> Result(String, SkillError) {
   do_process_provider_blocks(content, target, "")
 }
 
@@ -49,7 +52,7 @@ fn do_process_provider_blocks(
   remaining: String,
   target: String,
   acc: String,
-) -> String {
+) -> Result(String, SkillError) {
   case string.split_once(remaining, "{{#provider ") {
     Ok(#(before, after_open)) -> {
       case parse_provider_tag(after_open) {
@@ -63,13 +66,21 @@ fn do_process_provider_blocks(
               }
               do_process_provider_blocks(after_close, target, new_acc)
             }
-            Error(_) -> acc <> before <> "{{#provider " <> after_open
+            Error(_) ->
+              Error(TemplateError(
+                line_at(acc <> before),
+                "Unclosed {{#provider}} block",
+              ))
           }
         }
-        Error(_) -> acc <> before <> "{{#provider " <> after_open
+        Error(_) ->
+          Error(TemplateError(
+            line_at(acc <> before),
+            "Malformed {{#provider}} tag: missing provider names or closing }}",
+          ))
       }
     }
-    Error(_) -> acc <> remaining
+    Error(_) -> Ok(acc <> remaining)
   }
 }
 
@@ -188,7 +199,11 @@ fn do_render(
     Error(_) -> Ok(acc <> remaining)
     Ok(#(before, after_open)) -> {
       case string.split_once(after_open, "}}") {
-        Error(_) -> Error(TemplateError(0, "Unbalanced tag"))
+        Error(_) ->
+          Error(TemplateError(
+            line_at(acc <> before),
+            "Unbalanced tag: missing closing }}",
+          ))
         Ok(#(tag_body, after_close)) -> {
           let tag = string.trim(tag_body)
           case tag {
@@ -196,7 +211,7 @@ fn do_render(
             "#if " <> path -> {
               let path = string.trim(path)
               use #(block_content, rest) <- result.try(
-                find_block_end(after_close, "if"),
+                find_block_end(after_close, "if", acc <> before),
               )
               let value = resolve_path(path, ctx)
               case is_truthy(value) {
@@ -212,7 +227,7 @@ fn do_render(
             "#unless " <> path -> {
               let path = string.trim(path)
               use #(block_content, rest) <- result.try(
-                find_block_end(after_close, "unless"),
+                find_block_end(after_close, "unless", acc <> before),
               )
               let value = resolve_path(path, ctx)
               case is_truthy(value) {
@@ -228,7 +243,7 @@ fn do_render(
             "#each " <> path -> {
               let path = string.trim(path)
               use #(block_content, rest) <- result.try(
-                find_block_end(after_close, "each"),
+                find_block_end(after_close, "each", acc <> before),
               )
               let value = resolve_path(path, ctx)
               case value {
@@ -269,28 +284,21 @@ fn render_each_items(
       // Build context for each item: the item itself + @index, @first, @last
       let is_last = index == total - 1
       let is_first = index == 0
+      let special_keys = [
+        #("@index", VInt(index)),
+        #("@first", VBool(is_first)),
+        #("@last", VBool(is_last)),
+      ]
       let item_ctx = case item {
         VDict(props) ->
           VDict(
-            list.append(props, [
-              #("@index", VInt(index)),
-              #("@first", VBool(is_first)),
-              #("@last", VBool(is_last)),
-            ]),
+            list.append(
+              [#("this", item)],
+              list.append(props, special_keys),
+            ),
           )
         _ ->
-          VDict([
-            #("this", item),
-            #("@index", VInt(index)),
-            #("@first", VBool(is_first)),
-            #("@last", VBool(is_last)),
-          ])
-      }
-      // Also allow access to parent context properties via "this"
-      let item_ctx = case item_ctx, item {
-        VDict(props), _ ->
-          VDict(list.append([#("this", item)], props))
-        _, _ -> item_ctx
+          VDict(list.append([#("this", item)], special_keys))
       }
       use rendered <- result.try(render_tokens(template, item_ctx))
       render_each_items(template, rest, VNil, index + 1, total, acc <> rendered)
@@ -301,10 +309,11 @@ fn render_each_items(
 fn find_block_end(
   content: String,
   block_type: String,
+  consumed_before: String,
 ) -> Result(#(String, String), SkillError) {
   let open_tag = "{{#" <> block_type <> " "
   let close_tag = "{{/" <> block_type <> "}}"
-  do_find_block_end(content, open_tag, close_tag, 1, "")
+  do_find_block_end(content, open_tag, close_tag, 1, "", consumed_before)
 }
 
 fn do_find_block_end(
@@ -313,6 +322,7 @@ fn do_find_block_end(
   close_tag: String,
   depth: Int,
   acc: String,
+  consumed_before: String,
 ) -> Result(#(String, String), SkillError) {
   case depth {
     0 -> Ok(#(acc, remaining))
@@ -321,13 +331,16 @@ fn do_find_block_end(
       let open_pos = find_position(remaining, open_tag)
       let close_pos = find_position(remaining, close_tag)
       case close_pos {
-        -1 ->
+        -1 -> {
+          let block_name =
+            open_tag
+            |> string.replace("{{#", "")
+            |> string.trim()
           Error(TemplateError(
-            0,
-            "Unclosed {{#"
-              <> string.split(open_tag, " ") |> list.first |> result.unwrap("")
-              <> "}} block",
+            line_at(consumed_before <> acc),
+            "Unclosed {{#" <> block_name <> "}} block",
           ))
+        }
         _ -> {
           case open_pos >= 0 && open_pos < close_pos {
             True -> {
@@ -335,7 +348,14 @@ fn do_find_block_end(
               let before_len = open_pos + string.length(open_tag)
               let before = string.slice(remaining, 0, before_len)
               let rest = string.drop_start(remaining, before_len)
-              do_find_block_end(rest, open_tag, close_tag, depth + 1, acc <> before)
+              do_find_block_end(
+                rest,
+                open_tag,
+                close_tag,
+                depth + 1,
+                acc <> before,
+                consumed_before,
+              )
             }
             False -> {
               case depth {
@@ -360,6 +380,7 @@ fn do_find_block_end(
                     close_tag,
                     depth - 1,
                     acc <> before,
+                    consumed_before,
                   )
                 }
               }
@@ -399,8 +420,18 @@ fn resolve_path(path: String, ctx: Value) -> Value {
 fn resolve_parts(parts: List(String), ctx: Value) -> Value {
   case parts {
     [] -> ctx
-    ["this"] -> ctx
-    ["this", ..rest] -> resolve_parts(rest, ctx)
+    ["this"] ->
+      case lookup_key("this", ctx) {
+        VNil -> ctx
+        value -> value
+      }
+    ["this", ..rest] -> {
+      let this_val = case lookup_key("this", ctx) {
+        VNil -> ctx
+        value -> value
+      }
+      resolve_parts(rest, this_val)
+    }
     ["@index"] -> lookup_key("@index", ctx)
     ["@first"] -> lookup_key("@first", ctx)
     ["@last"] -> lookup_key("@last", ctx)
@@ -428,6 +459,15 @@ fn lookup_key(key: String, ctx: Value) -> Value {
 // ============================================================================
 // Value helpers
 // ============================================================================
+
+fn count_newlines(s: String) -> Int {
+  string.to_graphemes(s)
+  |> list.count(fn(c) { c == "\n" })
+}
+
+fn line_at(consumed: String) -> Int {
+  count_newlines(consumed) + 1
+}
 
 fn is_truthy(value: Value) -> Bool {
   case value {
@@ -481,6 +521,38 @@ pub fn build_context(
 
   let props = case skill.repository {
     Some(r) -> list.append(props, [#("repository", VStr(r))])
+    None -> props
+  }
+
+  // Add dependencies as a list
+  let dep_values =
+    list.map(skill.dependencies, fn(dep) {
+      VDict([
+        #("name", VStr(dep.name)),
+        #("version", VStr(dep.version)),
+        #("optional", VBool(dep.optional)),
+      ])
+    })
+  let props = list.append(props, [#("dependencies", VList(dep_values))])
+
+  // Add universal metadata
+  let props = case skill.metadata {
+    Some(m) -> {
+      let metadata_props = []
+      let metadata_props = case m.author {
+        Some(a) -> list.append(metadata_props, [#("author", VStr(a))])
+        None -> metadata_props
+      }
+      let metadata_props = case m.author_email {
+        Some(e) -> list.append(metadata_props, [#("author_email", VStr(e))])
+        None -> metadata_props
+      }
+      let metadata_props =
+        list.append(metadata_props, [
+          #("tags", VList(list.map(m.tags, fn(t) { VStr(t) }))),
+        ])
+      list.append(props, [#("metadata", VDict(metadata_props))])
+    }
     None -> props
   }
 

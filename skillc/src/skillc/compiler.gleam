@@ -9,7 +9,10 @@ import skillc/error.{type SkillError, FileError, ProviderError}
 import skillc/parser
 import skillc/provider
 import skillc/template
-import skillc/types.{type CompiledSkill, type FileCopy, CompiledSkill, FileCopy}
+import skillc/types.{
+  type CompiledSkill, type CompileWarning, type FileCopy, CompiledSkill,
+  FileCopy, FrontmatterInInstructions,
+}
 import yay
 
 pub fn compile(
@@ -45,6 +48,14 @@ pub fn compile(
     }),
   )
 
+  // 4b. Check for frontmatter in INSTRUCTIONS.md (generates warning)
+  let warnings: List(CompileWarning) = case
+    parser.has_frontmatter(instructions_content)
+  {
+    True -> [FrontmatterInInstructions(skill_dir <> "/INSTRUCTIONS.md")]
+    False -> []
+  }
+
   // 5-6. Render INSTRUCTIONS.md through template engine
   use rendered_instructions <- result.try(template.render_template(
     instructions_content,
@@ -72,7 +83,8 @@ pub fn compile(
   )
 
   // 8-9. Format output for target provider
-  let skill_md = format_skill_md(skill, target, provider_meta, rendered_instructions)
+  let skill_md =
+    format_skill_md(skill, target, provider_meta, rendered_instructions)
 
   // 10. Collect scripts
   let scripts = collect_files(skill_dir, target, "scripts")
@@ -83,6 +95,7 @@ pub fn compile(
     skill_md: skill_md,
     scripts: scripts,
     assets: assets,
+    warnings: warnings,
   ))
 }
 
@@ -172,11 +185,17 @@ fn format_openclaw(
   provider_meta: yay.Node,
   body: String,
 ) -> String {
+  // Provider values override universal values for top-level fields
+  let name = meta_string_or(provider_meta, "name", skill.name)
+  let description =
+    meta_string_or(provider_meta, "description", skill.description)
+  let version = meta_string_or(provider_meta, "version", skill.version)
+
   let frontmatter_lines = [
     "---",
-    "name: " <> skill.name,
-    "description: " <> skill.description,
-    "version: " <> skill.version,
+    "name: " <> name,
+    "description: " <> quote_yaml_string(description),
+    "version: " <> version,
   ]
 
   let frontmatter_lines = case skill.license {
@@ -185,13 +204,19 @@ fn format_openclaw(
   }
 
   // Add openclaw-specific metadata under metadata.openclaw
+  // (exclude fields already used at top level)
+  let universal_keys = ["name", "description", "version"]
   let meta_lines = case provider_meta {
     yay.NodeMap(pairs) -> {
       let openclaw_lines =
         list.filter_map(pairs, fn(pair) {
           case pair {
             #(yay.NodeStr(key), value) ->
-              Ok("  " <> key <> ": " <> node_to_yaml_value(value))
+              case list.contains(universal_keys, key) {
+                True -> Error(Nil)
+                False ->
+                  Ok("  " <> key <> ": " <> node_to_yaml_value(value))
+              }
             _ -> Error(Nil)
           }
         })
@@ -215,20 +240,31 @@ fn format_claude_code(
   provider_meta: yay.Node,
   body: String,
 ) -> String {
+  // Provider values override universal values for top-level fields
+  let name = meta_string_or(provider_meta, "name", skill.name)
+  let description =
+    meta_string_or(provider_meta, "description", skill.description)
+  let version = meta_string_or(provider_meta, "version", skill.version)
+
   let frontmatter_lines = [
     "---",
-    "name: " <> skill.name,
-    "description: " <> skill.description,
-    "version: " <> skill.version,
+    "name: " <> name,
+    "description: " <> quote_yaml_string(description),
+    "version: " <> version,
   ]
 
   // Flat frontmatter: merge provider metadata at top level
+  // (exclude fields already used above)
+  let universal_keys = ["name", "description", "version"]
   let meta_lines = case provider_meta {
     yay.NodeMap(pairs) ->
       list.filter_map(pairs, fn(pair) {
         case pair {
           #(yay.NodeStr(key), value) ->
-            Ok(key <> ": " <> node_to_yaml_value(value))
+            case list.contains(universal_keys, key) {
+              True -> Error(Nil)
+              False -> Ok(key <> ": " <> node_to_yaml_value(value))
+            }
           _ -> Error(Nil)
         }
       })
@@ -266,6 +302,13 @@ fn format_generic(skill: types.Skill, body: String) -> String {
   string.join(frontmatter_lines, "\n") <> "\n\n" <> body
 }
 
+fn meta_string_or(meta: yay.Node, key: String, default: String) -> String {
+  case yay.extract_optional_string(meta, key) {
+    Ok(Some(value)) -> value
+    _ -> default
+  }
+}
+
 fn node_to_yaml_value(node: yay.Node) -> String {
   case node {
     yay.NodeStr(s) -> quote_yaml_string(s)
@@ -288,6 +331,7 @@ fn quote_yaml_string(s: String) -> String {
   {
     True, _, _ -> "\"" <> s <> "\""
     _, True, _ -> "\"" <> s <> "\""
+    _, _, True -> "\"" <> s <> "\""
     _, _, _ -> s
   }
 }
@@ -368,7 +412,7 @@ fn copy_file_list(
 
 fn get_parent_dir(path: String) -> String {
   case string.split(path, "/") |> list.reverse() {
-    [_, ..rest] -> string.join(list.reverse(rest), "/")
+    [_, ..rest] if rest != [] -> string.join(list.reverse(rest), "/")
     _ -> "."
   }
 }
