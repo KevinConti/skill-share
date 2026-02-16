@@ -84,8 +84,10 @@ npx skill-universe help                                         Show help
 
 | Document | Description |
 |----------|-------------|
+| [Getting Started: Skill Creators](docs/getting-started-creators.md) | Build and publish your first cross-platform skill |
+| [Getting Started: Skill Users](docs/getting-started-users.md) | Find, install, and use skills with your AI agent |
 | [Unified Skill Spec](docs/unified-skill-spec.md) | Core specification — input format, templating, compilation, registry |
-| [Quick Start Guide](docs/quickstart.md) | Create your first cross-platform skill |
+| [Quick Start Guide](docs/quickstart.md) | Create your first cross-platform skill (concise) |
 | [Spec Overview](docs/spec.md) | Provider comparison and documentation index |
 | [Claude Code Skills](docs/skill-specs/claudecode-skills.md) | Claude Code native format reference |
 | [OpenClaw Skills](docs/skill-specs/openclaw-skills.md) | OpenClaw native format reference |

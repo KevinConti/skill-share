@@ -53,6 +53,8 @@ All three systems support the [Agent Skills](https://agentskills.io) standard bu
 
 ## Other Documents
 
+- [Getting Started: Skill Creators](getting-started-creators.md) — Build and publish your first cross-platform skill
+- [Getting Started: Skill Users](getting-started-users.md) — Find, install, and use skills with your AI agent
 - [Unified Skill Specification](unified-skill-spec.md) — The core spec defining the input format, templating, and compilation system
 - [Quick Start Guide](quickstart.md) — Step-by-step tutorial for creating your first skill
 - [Spec Validation Test Plan](../spec-validation/spec-validation.md) — Test scenarios for the CLI
