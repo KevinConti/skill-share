@@ -272,8 +272,11 @@ pub fn parse_install_spec(
   // Split path into segments: owner/repo or owner/repo/skill-name
   let segments = string.split(path, "/")
   case segments {
-    [owner, repo, skill_name] ->
-      #(owner <> "/" <> repo, Some(skill_name), version)
+    [owner, repo, skill_name] -> #(
+      owner <> "/" <> repo,
+      Some(skill_name),
+      version,
+    )
     _ -> #(path, None, version)
   }
 }
@@ -417,10 +420,7 @@ pub fn list_installed(output_dir: String) -> Result(String, SkillError) {
   }
 }
 
-fn check_install_dependencies(
-  skill_dir: String,
-  output_dir: String,
-) -> String {
+fn check_install_dependencies(skill_dir: String, output_dir: String) -> String {
   case simplifile.read(skill_dir <> "/skill.yaml") {
     Ok(content) ->
       case parser.parse_skill_yaml(content) {

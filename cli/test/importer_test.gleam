@@ -114,8 +114,7 @@ pub fn separate_fields_openclaw_test() {
       value: "  emoji: rocket\n  category: devtools",
     ),
   ]
-  let assert Ok(separated) =
-    importer.separate_fields(pairs, types.OpenClaw)
+  let assert Ok(separated) = importer.separate_fields(pairs, types.OpenClaw)
   should.equal(separated.universal.name, "test")
   should.equal(separated.universal.description, "A test")
   should.equal(semver.to_string(separated.universal.version), "1.0.0")
@@ -133,8 +132,7 @@ pub fn separate_fields_claude_code_test() {
     FrontmatterPair(key: "user-invocable", value: "true"),
     FrontmatterPair(key: "allowed-tools", value: "[Read, Grep]"),
   ]
-  let assert Ok(separated) =
-    importer.separate_fields(pairs, types.ClaudeCode)
+  let assert Ok(separated) = importer.separate_fields(pairs, types.ClaudeCode)
   should.equal(separated.universal.name, "test")
   should.equal(separated.universal.license, None)
   let provider_keys = list.map(separated.provider, fn(p) { p.key })
@@ -149,8 +147,7 @@ pub fn separate_fields_universal_extracted_test() {
     FrontmatterPair(key: "description", value: "Desc"),
     FrontmatterPair(key: "version", value: "3.0.0"),
   ]
-  let assert Ok(separated) =
-    importer.separate_fields(pairs, types.Codex)
+  let assert Ok(separated) = importer.separate_fields(pairs, types.Codex)
   should.equal(separated.universal.name, "my-skill")
   should.equal(separated.universal.description, "Desc")
   should.equal(semver.to_string(separated.universal.version), "3.0.0")
@@ -213,8 +210,7 @@ pub fn generate_skill_yaml_format_test() {
     FrontmatterPair(key: "version", value: "1.0.0"),
     FrontmatterPair(key: "license", value: "MIT"),
   ]
-  let assert Ok(separated) =
-    importer.separate_fields(pairs, types.OpenClaw)
+  let assert Ok(separated) = importer.separate_fields(pairs, types.OpenClaw)
   let yaml = importer.generate_skill_yaml(separated.universal)
   should.be_true(string.contains(yaml, "name: test-skill"))
   should.be_true(string.contains(yaml, "description: \"A test skill\""))
@@ -228,8 +224,7 @@ pub fn generate_skill_yaml_no_license_test() {
     FrontmatterPair(key: "description", value: "Desc"),
     FrontmatterPair(key: "version", value: "1.0.0"),
   ]
-  let assert Ok(separated) =
-    importer.separate_fields(pairs, types.Codex)
+  let assert Ok(separated) = importer.separate_fields(pairs, types.Codex)
   let yaml = importer.generate_skill_yaml(separated.universal)
   should.be_false(string.contains(yaml, "license"))
 }
@@ -246,8 +241,7 @@ pub fn generate_metadata_yaml_from_pairs_test() {
 
 pub fn generate_metadata_yaml_codex_override_test() {
   let codex_content = "interface:\n  display_name: Test\n"
-  let yaml =
-    importer.generate_metadata_yaml([], Some(codex_content))
+  let yaml = importer.generate_metadata_yaml([], Some(codex_content))
   should.equal(yaml, codex_content)
 }
 
@@ -270,8 +264,7 @@ pub fn fetch_source_local_file_test() {
       should.equal(path, "test/fixtures/import-openclaw/SKILL.md")
       should.equal(directory, "test/fixtures/import-openclaw")
     }
-    importer.SourceDirectory(_) ->
-      should.fail()
+    importer.SourceDirectory(_) -> should.fail()
   }
 }
 
@@ -292,11 +285,7 @@ pub fn import_openclaw_fixture_test() {
   let _ = simplifile.delete(output_dir)
 
   let assert Ok(result) =
-    importer.import_skill(
-      "test/fixtures/import-openclaw",
-      None,
-      output_dir,
-    )
+    importer.import_skill("test/fixtures/import-openclaw", None, output_dir)
 
   should.equal(result.provider, types.OpenClaw)
   should.be_true(string.contains(result.skill_yaml, "name: my-imported-skill"))
@@ -319,11 +308,7 @@ pub fn import_claude_code_fixture_test() {
   let _ = simplifile.delete(output_dir)
 
   let assert Ok(result) =
-    importer.import_skill(
-      "test/fixtures/import-claude-code",
-      None,
-      output_dir,
-    )
+    importer.import_skill("test/fixtures/import-claude-code", None, output_dir)
 
   should.equal(result.provider, types.ClaudeCode)
   should.be_true(string.contains(result.skill_yaml, "name: my-imported-skill"))
@@ -343,11 +328,7 @@ pub fn import_codex_fixture_test() {
   let _ = simplifile.delete(output_dir)
 
   let assert Ok(result) =
-    importer.import_skill(
-      "test/fixtures/import-codex",
-      None,
-      output_dir,
-    )
+    importer.import_skill("test/fixtures/import-codex", None, output_dir)
 
   should.equal(result.provider, types.Codex)
   should.be_true(string.contains(result.skill_yaml, "name: my-imported-skill"))
@@ -424,8 +405,7 @@ pub fn roundtrip_codex_test() {
     compiler.compile("test/fixtures/valid-skill", "codex")
   let assert Ok(_) = compiler.emit(compiled, compile_dir, "test-skill")
 
-  let compiled_skill_dir =
-    compile_dir <> "/codex/.agents/skills/test-skill"
+  let compiled_skill_dir = compile_dir <> "/codex/.agents/skills/test-skill"
   let assert Ok(result) =
     importer.import_skill(compiled_skill_dir, Some(types.Codex), import_dir)
 
@@ -444,11 +424,7 @@ pub fn roundtrip_codex_test() {
 
 pub fn import_nonexistent_path_fails_test() {
   let result =
-    importer.import_skill(
-      "/tmp/nonexistent-import-xyz",
-      None,
-      "/tmp/out",
-    )
+    importer.import_skill("/tmp/nonexistent-import-xyz", None, "/tmp/out")
   should.be_error(result)
 }
 
@@ -484,11 +460,7 @@ pub fn import_output_dir_already_has_skill_yaml_fails_test() {
   let _ = simplifile.write(output_dir <> "/skill.yaml", "name: existing\n")
 
   let result =
-    importer.import_skill(
-      "test/fixtures/import-openclaw",
-      None,
-      output_dir,
-    )
+    importer.import_skill("test/fixtures/import-openclaw", None, output_dir)
   should.be_error(result)
   let assert Error(error.ImportError(_, msg)) = result
   should.be_true(string.contains(msg, "already exists"))

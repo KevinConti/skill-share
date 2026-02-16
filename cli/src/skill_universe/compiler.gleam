@@ -162,9 +162,9 @@ pub fn compile_all(skill_dir: String) -> Result(List(CompiledSkill), SkillError)
         "No supported providers found in " <> skill_dir,
       ))
     _ -> {
-      use #(skill, instructions_content) <- result.try(
-        read_shared_inputs(skill_dir),
-      )
+      use #(skill, instructions_content) <- result.try(read_shared_inputs(
+        skill_dir,
+      ))
       list.try_map(providers, fn(p) {
         compile_for_provider(skill_dir, p, skill, instructions_content)
       })
@@ -187,9 +187,9 @@ pub fn compile_providers(
   case parsed_providers {
     [] -> Error(ProviderError("none", "No providers specified"))
     _ -> {
-      use #(skill, instructions_content) <- result.try(
-        read_shared_inputs(skill_dir),
-      )
+      use #(skill, instructions_content) <- result.try(read_shared_inputs(
+        skill_dir,
+      ))
       list.try_map(parsed_providers, fn(p) {
         compile_for_provider(skill_dir, p, skill, instructions_content)
       })
@@ -255,7 +255,10 @@ pub fn emit(
   ))
 
   // Copy assets
-  use _ <- result.try(fs.copy_file_list(compiled.assets, provider_dir <> "/assets"))
+  use _ <- result.try(fs.copy_file_list(
+    compiled.assets,
+    provider_dir <> "/assets",
+  ))
 
   Ok(Nil)
 }
@@ -497,12 +500,7 @@ fn dependency_exists(dep_name: String, output_dir: String) -> Bool {
     Ok(entries) ->
       list.any(entries, fn(provider_dir) {
         let skill_md_path =
-          output_dir
-          <> "/"
-          <> provider_dir
-          <> "/"
-          <> dep_name
-          <> "/SKILL.md"
+          output_dir <> "/" <> provider_dir <> "/" <> dep_name <> "/SKILL.md"
         case simplifile.is_file(skill_md_path) {
           Ok(True) -> True
           _ -> False
@@ -523,7 +521,8 @@ fn collect_files(
 ) -> List(FileCopy) {
   let dir_name = file_category_to_string(category)
   let shared_dir = skill_dir <> "/" <> dir_name
-  let provider_dir = skill_dir <> "/providers/" <> provider_str <> "/" <> dir_name
+  let provider_dir =
+    skill_dir <> "/providers/" <> provider_str <> "/" <> dir_name
 
   let shared_files = case simplifile.get_files(shared_dir) {
     Ok(files) ->
@@ -557,5 +556,3 @@ fn merge_file_lists(
     list.filter(shared, fn(f) { !set.contains(provider_paths, f.relative_path) })
   list.append(filtered_shared, provider)
 }
-
-

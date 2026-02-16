@@ -90,4 +90,3 @@ pub type CompiledSkill {
 pub type FileCopy {
   FileCopy(src: String, relative_path: String)
 }
-

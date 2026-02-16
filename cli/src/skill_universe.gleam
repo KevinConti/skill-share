@@ -199,14 +199,12 @@ fn emit_compiled_list(
   Ok(string.join(lines, "\n"))
 }
 
-fn check_deps_after_compile(
-  skill_dir: String,
-  output_dir: String,
-) -> String {
+fn check_deps_after_compile(skill_dir: String, output_dir: String) -> String {
   case simplifile.read(skill_dir <> "/skill.yaml") {
     Ok(content) ->
       case parser.parse_skill_yaml(content) {
-        Ok(skill) -> format_warnings(compiler.check_dependencies(skill, output_dir))
+        Ok(skill) ->
+          format_warnings(compiler.check_dependencies(skill, output_dir))
         Error(_) -> ""
       }
     Error(_) -> ""

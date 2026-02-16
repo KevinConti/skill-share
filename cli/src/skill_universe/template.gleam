@@ -382,8 +382,7 @@ fn render_conditional_block(
             after_block_line,
           )
         }
-        None ->
-          do_render(block.remaining, ctx, acc <> before, after_block_line)
+        None -> do_render(block.remaining, ctx, acc <> before, after_block_line)
       }
     }
   }
@@ -631,7 +630,10 @@ fn do_find_block_end_with_else(
                     1 -> {
                       let block_content = string.slice(remaining, 0, cp)
                       let rest =
-                        string.drop_start(remaining, cp + string.length(close_tag))
+                        string.drop_start(
+                          remaining,
+                          cp + string.length(close_tag),
+                        )
                       case else_split {
                         Some(if_content) ->
                           Ok(ConditionalBlock(

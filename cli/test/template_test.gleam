@@ -17,7 +17,8 @@ import yay
 pub fn provider_block_included_test() {
   let content =
     "before\n{{#provider \"openclaw\"}}openclaw content{{/provider}}\nafter"
-  let assert Ok(result) = template.process_provider_blocks(content, types.OpenClaw)
+  let assert Ok(result) =
+    template.process_provider_blocks(content, types.OpenClaw)
   should.be_true(string.contains(result, "openclaw content"))
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
@@ -54,7 +55,8 @@ pub fn multi_provider_block_excluded_test() {
 
 pub fn empty_provider_block_test() {
   let content = "before{{#provider \"openclaw\"}}{{/provider}}after"
-  let assert Ok(result) = template.process_provider_blocks(content, types.OpenClaw)
+  let assert Ok(result) =
+    template.process_provider_blocks(content, types.OpenClaw)
   should.be_true(string.contains(result, "before"))
   should.be_true(string.contains(result, "after"))
 }
@@ -62,7 +64,8 @@ pub fn empty_provider_block_test() {
 pub fn nested_provider_blocks_test() {
   let content =
     "{{#provider \"openclaw\"}}outer{{#provider \"openclaw\"}}inner{{/provider}}end{{/provider}}"
-  let assert Ok(result) = template.process_provider_blocks(content, types.OpenClaw)
+  let assert Ok(result) =
+    template.process_provider_blocks(content, types.OpenClaw)
   should.be_true(string.contains(result, "outer"))
   should.be_true(string.contains(result, "inner"))
 }

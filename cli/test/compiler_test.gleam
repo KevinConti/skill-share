@@ -743,10 +743,10 @@ pub fn compile_providers_empty_list_fails_test() {
 pub fn check_dependencies_missing_dep_warns_test() {
   let assert Ok(skill_content) =
     simplifile.read("test/fixtures/skill-with-deps/skill.yaml")
-  let assert Ok(_) = skill_universe.run(["check", "test/fixtures/skill-with-deps"])
+  let assert Ok(_) =
+    skill_universe.run(["check", "test/fixtures/skill-with-deps"])
   // The skill has a non-optional dep "helper-skill" which doesn't exist in output
-  let assert Ok(parsed_skill) =
-    parser.parse_skill_yaml(skill_content)
+  let assert Ok(parsed_skill) = parser.parse_skill_yaml(skill_content)
   let output_dir = "/tmp/skill_universe-test-dep-check"
   let _ = simplifile.delete(output_dir)
   let assert Ok(_) = simplifile.create_directory_all(output_dir)
@@ -767,12 +767,13 @@ pub fn check_dependencies_optional_not_warned_test() {
   let assert Ok(_) = simplifile.create_directory_all(output_dir)
   // Only "helper-skill" (non-optional) should warn, not "optional-skill"
   let warnings = compiler.check_dependencies(skill, output_dir)
-  let names = list.map(warnings, fn(w) {
-    case w {
-      types.MissingDependency(dep) -> dep.name
-      _ -> ""
-    }
-  })
+  let names =
+    list.map(warnings, fn(w) {
+      case w {
+        types.MissingDependency(dep) -> dep.name
+        _ -> ""
+      }
+    })
   should.be_false(list.contains(names, "optional-skill"))
   let _ = simplifile.delete(output_dir)
   Nil

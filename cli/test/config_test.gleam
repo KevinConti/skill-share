@@ -138,7 +138,8 @@ pub fn cli_config_init_test() {
 }
 
 pub fn cli_config_check_missing_dir_test() {
-  let result = skill_universe.run(["config", "check", "/tmp/nonexistent-dir-xyz"])
+  let result =
+    skill_universe.run(["config", "check", "/tmp/nonexistent-dir-xyz"])
   should.be_error(result)
 }
 

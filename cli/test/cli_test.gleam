@@ -123,7 +123,8 @@ pub fn cli_compile_nonexistent_dir_test() {
 // ============================================================================
 
 pub fn cli_check_test() {
-  let assert Ok(output) = skill_universe.run(["check", "test/fixtures/valid-skill"])
+  let assert Ok(output) =
+    skill_universe.run(["check", "test/fixtures/valid-skill"])
   should.be_true(string.contains(output, "test-skill"))
   should.be_true(string.contains(output, "v1.2.3"))
   should.be_true(string.contains(output, "openclaw"))
@@ -132,7 +133,8 @@ pub fn cli_check_test() {
 }
 
 pub fn cli_check_minimal_skill_test() {
-  let assert Ok(output) = skill_universe.run(["check", "test/fixtures/minimal-skill"])
+  let assert Ok(output) =
+    skill_universe.run(["check", "test/fixtures/minimal-skill"])
   should.be_true(string.contains(output, "minimal"))
   should.be_true(string.contains(output, "openclaw"))
 }
@@ -171,7 +173,8 @@ pub fn cli_init_with_name_test() {
   let dir = "/tmp/skill_universe-cli-test-init-named"
   let _ = simplifile.delete(dir)
 
-  let assert Ok(output) = skill_universe.run(["init", dir, "--name", "my-cool-skill"])
+  let assert Ok(output) =
+    skill_universe.run(["init", dir, "--name", "my-cool-skill"])
   should.be_true(string.contains(output, "my-cool-skill"))
 
   // Verify the name is in skill.yaml

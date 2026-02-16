@@ -10,7 +10,9 @@ import skill_universe/path
 import skill_universe/platform
 import skill_universe/semver.{type SemVer}
 import skill_universe/shell
-import skill_universe/types.{type FileCopy, type Provider, ClaudeCode, Codex, FileCopy, OpenClaw}
+import skill_universe/types.{
+  type FileCopy, type Provider, ClaudeCode, Codex, FileCopy, OpenClaw,
+}
 import skill_universe/yaml
 
 // ============================================================================
@@ -39,10 +41,7 @@ pub type UniversalFields {
 
 /// Result of separating frontmatter into universal and provider-specific parts.
 pub type SeparatedFields {
-  SeparatedFields(
-    universal: UniversalFields,
-    provider: List(FrontmatterPair),
-  )
+  SeparatedFields(universal: UniversalFields, provider: List(FrontmatterPair))
 }
 
 /// A resolved import source — either a directory or a single file.
@@ -111,8 +110,7 @@ pub fn import_skill(
 
   // Generate files
   let skill_yaml = generate_skill_yaml(separated.universal)
-  let metadata_yaml =
-    generate_metadata_yaml(separated.provider, codex_yaml)
+  let metadata_yaml = generate_metadata_yaml(separated.provider, codex_yaml)
   let instructions_md = string.trim(frontmatter.body) <> "\n"
 
   // Collect scripts and assets from source dir
@@ -140,9 +138,7 @@ pub fn import_skill(
 // ============================================================================
 
 /// Split a SKILL.md into YAML frontmatter key-value pairs and the body markdown.
-pub fn parse_frontmatter(
-  content: String,
-) -> Result(Frontmatter, SkillError) {
+pub fn parse_frontmatter(content: String) -> Result(Frontmatter, SkillError) {
   let trimmed = string.trim_start(content)
   case string.starts_with(trimmed, "---") {
     False ->
@@ -226,8 +222,7 @@ fn parse_yaml_lines(
               case trimmed_value {
                 "" -> {
                   let #(block_lines, remaining) = collect_indented(rest, [])
-                  let block_value =
-                    string.join(list.reverse(block_lines), "\n")
+                  let block_value = string.join(list.reverse(block_lines), "\n")
                   parse_yaml_lines(remaining, [
                     FrontmatterPair(key:, value: block_value),
                     ..acc
@@ -375,18 +370,13 @@ pub fn separate_fields(
       }
     }
     _ ->
-      list.filter(pairs, fn(pair) {
-        !list.contains(universal_keys, pair.key)
-      })
+      list.filter(pairs, fn(pair) { !list.contains(universal_keys, pair.key) })
   }
 
   Ok(SeparatedFields(universal: universal, provider: provider_pairs))
 }
 
-fn find_pair_value(
-  pairs: List(FrontmatterPair),
-  key: String,
-) -> Option(String) {
+fn find_pair_value(pairs: List(FrontmatterPair), key: String) -> Option(String) {
   case list.find(pairs, fn(pair) { pair.key == key }) {
     Ok(FrontmatterPair(value:, ..)) -> Some(value)
     Error(Nil) -> None
@@ -419,9 +409,7 @@ fn require_non_empty(
 /// Remove surrounding quotes from a YAML string value.
 fn unquote_yaml_string(s: String) -> String {
   let trimmed = string.trim(s)
-  case
-    string.starts_with(trimmed, "\"") && string.ends_with(trimmed, "\"")
-  {
+  case string.starts_with(trimmed, "\"") && string.ends_with(trimmed, "\"") {
     True -> {
       let inner = trimmed |> string.drop_start(1) |> string.drop_end(1)
       let inner = string.replace(inner, "\\n", "\n")
@@ -429,9 +417,7 @@ fn unquote_yaml_string(s: String) -> String {
       string.replace(inner, "\\\\", "\\")
     }
     False ->
-      case
-        string.starts_with(trimmed, "'") && string.ends_with(trimmed, "'")
-      {
+      case string.starts_with(trimmed, "'") && string.ends_with(trimmed, "'") {
         True -> trimmed |> string.drop_start(1) |> string.drop_end(1)
         False -> trimmed
       }
@@ -465,8 +451,7 @@ fn parse_openclaw_lines(
                     string.length(line) - string.length(stripped)
                   let #(block_lines, remaining) =
                     collect_sub_indented(rest, base_indent, [])
-                  let block_value =
-                    string.join(list.reverse(block_lines), "\n")
+                  let block_value = string.join(list.reverse(block_lines), "\n")
                   parse_openclaw_lines(remaining, [
                     FrontmatterPair(key:, value: block_value),
                     ..acc
@@ -588,10 +573,10 @@ pub fn fetch_source(source: String) -> Result(ResolvedSource, SkillError) {
 }
 
 fn fetch_remote(url: String) -> Result(ResolvedSource, SkillError) {
-  let tmp_dir = platform.tmpdir() <> "/skill-universe-import-" <> hash_string(url)
+  let tmp_dir =
+    platform.tmpdir() <> "/skill-universe-import-" <> hash_string(url)
   case simplifile.create_directory_all(tmp_dir) {
-    Error(_) ->
-      Error(ImportError(url, "Failed to create temp directory"))
+    Error(_) -> Error(ImportError(url, "Failed to create temp directory"))
     Ok(_) -> {
       let cmd =
         "curl -sSfL -o "
@@ -600,8 +585,7 @@ fn fetch_remote(url: String) -> Result(ResolvedSource, SkillError) {
         <> shell.quote(url)
       case shell.exec(cmd) {
         Ok(_) -> Ok(SourceDirectory(tmp_dir))
-        Error(msg) ->
-          Error(ImportError(url, "Failed to download: " <> msg))
+        Error(msg) -> Error(ImportError(url, "Failed to download: " <> msg))
       }
     }
   }
@@ -633,10 +617,7 @@ pub fn emit_imported(
 ) -> Result(Nil, SkillError) {
   case simplifile.is_file(output_dir <> "/skill.yaml") {
     Ok(True) ->
-      Error(ImportError(
-        "emit",
-        "skill.yaml already exists in " <> output_dir,
-      ))
+      Error(ImportError("emit", "skill.yaml already exists in " <> output_dir))
     _ -> do_emit_imported(import_result, output_dir)
   }
 }

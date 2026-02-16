@@ -15,19 +15,18 @@ pub opaque type SemVer {
   )
 }
 
-pub fn new(
-  major: Int,
-  minor: Int,
-  patch: Int,
-) -> Result(SemVer, SkillError) {
+pub fn new(major: Int, minor: Int, patch: Int) -> Result(SemVer, SkillError) {
   case major >= 0, minor >= 0, patch >= 0 {
     True, True, True ->
-      Ok(SemVer(major: major, minor: minor, patch: patch, prerelease: None, build: None))
-    _, _, _ ->
-      Error(ValidationError(
-        "version",
-        "SemVer components must be non-negative",
+      Ok(SemVer(
+        major: major,
+        minor: minor,
+        patch: patch,
+        prerelease: None,
+        build: None,
       ))
+    _, _, _ ->
+      Error(ValidationError("version", "SemVer components must be non-negative"))
   }
 }
 

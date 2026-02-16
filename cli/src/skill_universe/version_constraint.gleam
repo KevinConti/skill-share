@@ -77,13 +77,10 @@ fn satisfies_caret(version: SemVer, constraint: SemVer) -> Bool {
       let upper = case semver.major(constraint) {
         0 ->
           case semver.minor(constraint) {
-            0 ->
-              semver.new(0, 0, semver.patch(constraint) + 1)
-            minor ->
-              semver.new(0, minor + 1, 0)
+            0 -> semver.new(0, 0, semver.patch(constraint) + 1)
+            minor -> semver.new(0, minor + 1, 0)
           }
-        major ->
-          semver.new(major + 1, 0, 0)
+        major -> semver.new(major + 1, 0, 0)
       }
       case upper {
         Ok(upper_ver) -> semver.compare(version, upper_ver) == order.Lt
@@ -98,7 +95,9 @@ fn satisfies_tilde(version: SemVer, constraint: SemVer) -> Bool {
   case semver.compare(version, constraint) {
     order.Lt -> False
     _ -> {
-      case semver.new(semver.major(constraint), semver.minor(constraint) + 1, 0) {
+      case
+        semver.new(semver.major(constraint), semver.minor(constraint) + 1, 0)
+      {
         Ok(upper) -> semver.compare(version, upper) == order.Lt
         Error(_) -> False
       }

@@ -17,7 +17,9 @@ pub fn generate_template(skill: Skill) -> String {
     [] -> "# No configuration fields defined for " <> skill.name <> "\n"
     fields -> {
       let header =
-        "# Configuration for " <> skill.name <> "\n"
+        "# Configuration for "
+        <> skill.name
+        <> "\n"
         <> "# Set these environment variables before using the skill.\n\n"
       let lines =
         list.map(fields, fn(field) {

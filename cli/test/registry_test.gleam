@@ -154,7 +154,8 @@ pub fn cli_list_installed_test() {
   let _ = simplifile.delete(dir)
   let assert Ok(_) = simplifile.create_directory_all(dir)
 
-  let assert Ok(output) = skill_universe.run(["list", "--installed", "--output", dir])
+  let assert Ok(output) =
+    skill_universe.run(["list", "--installed", "--output", dir])
   should.be_true(string.contains(output, "No skills installed"))
 
   let _ = simplifile.delete(dir)
