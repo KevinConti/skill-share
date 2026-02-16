@@ -4,7 +4,7 @@
 
 Claude Code skills extend Claude's capabilities. They follow the [Agent Skills](https://agentskills.io) open standard.
 
-This document describes Claude Code's native SKILL.md format — the output that `skillc compile` produces for the `claude-code` provider. For the unified input format, see the [Unified Skill Specification](../unified-skill-spec.md).
+This document describes Claude Code's native SKILL.md format — the output that `npx skill-universe compile` produces for the `claude-code` provider. For the unified input format, see the [Unified Skill Specification](../unified-skill-spec.md).
 
 ## Directory Structure
 

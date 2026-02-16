@@ -13,7 +13,7 @@ Separate **content** (instructions) from **packaging** (metadata, directory layo
 ```
 skill.yaml + INSTRUCTIONS.md + providers/X/metadata.yaml
                     │
-              skillc compile
+         npx skill-universe compile
           (template rendering + merge)
                     │
     ┌───────────────┼───────────────┐
@@ -41,54 +41,43 @@ Provider support is declared by directory structure: if `providers/X/metadata.ya
 
 ## Getting Started
 
-### Prerequisites
-
-- [Gleam](https://gleam.run) >= 1.14.0
-- [Node.js](https://nodejs.org) (for the JavaScript build target)
-
-### Build
-
-```bash
-cd skillc && gleam build
-```
-
 ### Quick Usage
 
 ```bash
 # Create a new skill
-skillc init my-skill
+npx skill-universe init my-skill
 
 # Check provider support
-skillc check my-skill
+npx skill-universe check my-skill
 
 # Compile for all providers
-skillc compile my-skill
+npx skill-universe compile my-skill
 
 # Compile for a single provider
-skillc compile my-skill --target claude-code
+npx skill-universe compile my-skill --target claude-code
 ```
 
 ## CLI
 
 ```
-skillc compile <skill-dir>                          Compile all providers
-skillc compile <skill-dir> --target <provider>      Compile single provider
-skillc compile <skill-dir> --providers <list>       Compile selected providers
-skillc compile <skill-dir> --output <dir>           Compile with custom output
-skillc check <skill-dir>                            Check supported providers
-skillc init <skill-dir>                             Create a new skill
-skillc import <source>                              Import a provider-specific skill
-skillc import <source> --provider <provider>        Import with explicit provider
-skillc import <source> --output <dir>               Import to custom output dir
-skillc publish <skill-dir>                          Publish to GitHub Releases
-skillc publish <skill-dir> --repo <owner/repo>     Publish to specific repo
-skillc search <query>                               Search for skills
-skillc install <owner/repo>                         Install a skill
-skillc install <owner/repo> --target <provider>    Install for specific provider
-skillc list <owner/repo>                            List available versions
-skillc list --installed                             List installed skills
-skillc version                                      Show version
-skillc help                                         Show help
+npx skill-universe compile <skill-dir>                          Compile all providers
+npx skill-universe compile <skill-dir> --target <provider>      Compile single provider
+npx skill-universe compile <skill-dir> --providers <list>       Compile selected providers
+npx skill-universe compile <skill-dir> --output <dir>           Compile with custom output
+npx skill-universe check <skill-dir>                            Check supported providers
+npx skill-universe init <skill-dir>                             Create a new skill
+npx skill-universe import <source>                              Import a provider-specific skill
+npx skill-universe import <source> --provider <provider>        Import with explicit provider
+npx skill-universe import <source> --output <dir>               Import to custom output dir
+npx skill-universe publish <skill-dir>                          Publish to GitHub Releases
+npx skill-universe publish <skill-dir> --repo <owner/repo>     Publish to specific repo
+npx skill-universe search <query>                               Search for skills
+npx skill-universe install <owner/repo>                         Install a skill
+npx skill-universe install <owner/repo> --target <provider>    Install for specific provider
+npx skill-universe list <owner/repo>                            List available versions
+npx skill-universe list --installed                             List installed skills
+npx skill-universe version                                      Show version
+npx skill-universe help                                         Show help
 ```
 
 ## Documentation
@@ -101,7 +90,7 @@ skillc help                                         Show help
 | [Claude Code Skills](docs/skill-specs/claudecode-skills.md) | Claude Code native format reference |
 | [OpenClaw Skills](docs/skill-specs/openclaw-skills.md) | OpenClaw native format reference |
 | [Codex Skills](docs/skill-specs/openai-codex-skills.md) | OpenAI Codex native format reference |
-| [Validation Test Plan](spec-validation/spec-validation.md) | Test scenarios for the `skillc` CLI |
+| [Validation Test Plan](spec-validation/spec-validation.md) | Test scenarios for the CLI |
 
 ## Examples
 
@@ -123,14 +112,14 @@ The [`skills`](https://www.npmjs.com/package/skills) CLI (from Vercel) is a pack
 | **Distribution** | GitHub Releases with versioned tarballs | Git repos cloned via CLI |
 | **Build step required** | Yes | No |
 
-For simple text-only skills that need no metadata differences across agents, `skills` is lighter-weight and has broader agent coverage. For skills that need provider-specific metadata, scripts, configuration, or conditional content, `skill-universe` produces genuinely native output rather than one-size-fits-all copies. The two can work together — compile with `skill-universe`, distribute the output with `skills`.
+No agent strictly *requires* provider-specific metadata — a plain SKILL.md with just `name`, `description`, and instructions will load everywhere. That's why `skills` works: the minimum bar is low. But without metadata, skills lose access to features like tool restrictions (`allowed-tools`), subagent execution (`context: fork`), binary dependency checks (`requires.bins`), UI branding, and MCP server declarations. `skill-universe` produces output that takes full advantage of each provider's native capabilities, rather than settling for the lowest common denominator.
 
 ## Roadmap
 
 - **Expand provider coverage** — Add providers beyond OpenClaw, Claude Code, and Codex (e.g., Cursor, Windsurf, Gemini CLI). Each new provider gets genuinely adapted output, not just another directory path.
-- **`skills` CLI compatibility** — Compile output that is directly installable via `npx skills add`, bridging the two ecosystems so authors compile with `skillc` and distribute through the `skills` registry.
-- **Interactive skill discovery** — Add a browsable `skillc find` command with interactive selection, similar to `npx skills find`.
-- **Update detection** — `skillc check --updates` and `skillc update` commands to notify when installed skills have newer versions available.
+- **Compile-and-install** — After compilation, automatically install each provider's output into the correct local agent directory (e.g., `.claude/skills/`, `.cursor/skills/`), removing the manual copy step.
+- **Interactive skill discovery** — Add a browsable `find` command with interactive selection, similar to `npx skills find`.
+- **Update detection** — `check --updates` and `update` commands to notify when installed skills have newer versions available.
 - **GitLab and arbitrary git URL support** — Extend publishing and installation beyond GitHub-only sources.
 - **CI/CD mode** — `--yes` and `--all` flags for non-interactive compilation and batch operations in pipelines.
 - **Agent auto-detection** — Detect locally installed agents and compile/install only for those providers automatically.
@@ -138,7 +127,7 @@ For simple text-only skills that need no metadata differences across agents, `sk
 
 ## Status
 
-The `skillc` CLI v1.0.0 is implemented in [Gleam](https://gleam.run) with compilation, import, scaffolding, and GitHub Releases-based registry commands. The test suite covers 276 test cases across all modules.
+The CLI v1.0.0 is implemented in [Gleam](https://gleam.run) with compilation, import, scaffolding, and GitHub Releases-based registry commands. The test suite covers 276 test cases across all modules.
 
 ## Related
 

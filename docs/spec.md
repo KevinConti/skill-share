@@ -4,12 +4,12 @@ This directory contains documentation for the unified skill specification system
 
 ## How It Works
 
-Skill authors write shared instructions in `INSTRUCTIONS.md` (with Handlebars template support) and universal metadata in `skill.yaml`. Provider-specific metadata lives in `providers/X/metadata.yaml` subdirectories. The `skillc` compiler merges these into native skill packages for each target platform.
+Skill authors write shared instructions in `INSTRUCTIONS.md` (with Handlebars template support) and universal metadata in `skill.yaml`. Provider-specific metadata lives in `providers/X/metadata.yaml` subdirectories. The compiler merges these into native skill packages for each target platform.
 
 ```
 skill.yaml + INSTRUCTIONS.md + providers/X/metadata.yaml
                     │
-              skillc compile
+         npx skill-universe compile
           (template rendering + merge)
                     │
     ┌───────────────┼───────────────┐
@@ -29,7 +29,7 @@ See the [Unified Skill Specification](unified-skill-spec.md) for the full spec.
 
 ## Provider Reference
 
-These documents describe each platform's native skill format — the output that `skillc` produces:
+These documents describe each platform's native skill format — the output that `npx skill-universe compile` produces:
 
 - [Claude Code Skills](skill-specs/claudecode-skills.md) — SKILL.md with flat frontmatter, subagent execution, templates
 - [OpenClaw Skills](skill-specs/openclaw-skills.md) — Single SKILL.md with metadata.openclaw block, auto binary detection
@@ -55,4 +55,4 @@ All three systems support the [Agent Skills](https://agentskills.io) standard bu
 
 - [Unified Skill Specification](unified-skill-spec.md) — The core spec defining the input format, templating, and compilation system
 - [Quick Start Guide](quickstart.md) — Step-by-step tutorial for creating your first skill
-- [Spec Validation Test Plan](../spec-validation/spec-validation.md) — Test scenarios for the `skillc` CLI
+- [Spec Validation Test Plan](../spec-validation/spec-validation.md) — Test scenarios for the CLI

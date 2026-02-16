@@ -266,13 +266,13 @@ This document outlines test scenarios for validating that the CLI meets the unif
 
 ### 8.1 Command Structure
 
-- `skillc init` creates new skill from template (skill.yaml + INSTRUCTIONS.md + providers/)
-- `skillc check` validates provider support
-- `skillc compile` builds provider outputs
-- `skillc publish` uploads to registry
-- `skillc search` queries registry
-- `skillc install` downloads and installs
-- `skillc list` shows installed skills
+- `npx skill-universe init` creates new skill from template (skill.yaml + INSTRUCTIONS.md + providers/)
+- `npx skill-universe check` validates provider support
+- `npx skill-universe compile` builds provider outputs
+- `npx skill-universe publish` uploads to registry
+- `npx skill-universe search` queries registry
+- `npx skill-universe install` downloads and installs
+- `npx skill-universe list` shows installed skills
 
 ### 8.2 Error Handling
 

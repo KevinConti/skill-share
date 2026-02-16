@@ -15,7 +15,7 @@ Separate **content** (instructions) from **packaging** (metadata, directory layo
 ```
 skill.yaml + INSTRUCTIONS.md + providers/X/metadata.yaml
                     │
-            skill-universe compile
+         npx skill-universe compile
           (template rendering + merge)
                     │
     ┌───────────────┼───────────────┐
@@ -41,49 +41,43 @@ Provider support is declared by directory structure: if `providers/X/metadata.ya
 | [Claude Code](https://code.claude.com/docs/en/skills) | SKILL.md + templates/scripts directory |
 | [OpenAI Codex](https://developers.openai.com/codex/skills) | `.agents/skills/` structure + `openai.yaml` |
 
-## Installation
-
-```bash
-npm install -g skill-universe
-```
-
 ## Quick Usage
 
 ```bash
 # Create a new skill
-skill-universe init my-skill
+npx skill-universe init my-skill
 
 # Check provider support
-skill-universe check my-skill
+npx skill-universe check my-skill
 
 # Compile for all providers
-skill-universe compile my-skill
+npx skill-universe compile my-skill
 
 # Compile for a single provider
-skill-universe compile my-skill --target claude-code
+npx skill-universe compile my-skill --target claude-code
 ```
 
 ## CLI
 
 ```
-skill-universe compile <skill-dir>                          Compile all providers
-skill-universe compile <skill-dir> --target <provider>      Compile single provider
-skill-universe compile <skill-dir> --providers <list>       Compile selected providers
-skill-universe compile <skill-dir> --output <dir>           Compile with custom output
-skill-universe check <skill-dir>                            Check supported providers
-skill-universe init <skill-dir>                             Create a new skill
-skill-universe import <source>                              Import a provider-specific skill
-skill-universe import <source> --provider <provider>        Import with explicit provider
-skill-universe import <source> --output <dir>               Import to custom output dir
-skill-universe publish <skill-dir>                          Publish to GitHub Releases
-skill-universe publish <skill-dir> --repo <owner/repo>     Publish to specific repo
-skill-universe search <query>                               Search for skills
-skill-universe install <owner/repo>                         Install a skill
-skill-universe install <owner/repo> --target <provider>    Install for specific provider
-skill-universe list <owner/repo>                            List available versions
-skill-universe list --installed                             List installed skills
-skill-universe version                                      Show version
-skill-universe help                                         Show help
+npx skill-universe compile <skill-dir>                          Compile all providers
+npx skill-universe compile <skill-dir> --target <provider>      Compile single provider
+npx skill-universe compile <skill-dir> --providers <list>       Compile selected providers
+npx skill-universe compile <skill-dir> --output <dir>           Compile with custom output
+npx skill-universe check <skill-dir>                            Check supported providers
+npx skill-universe init <skill-dir>                             Create a new skill
+npx skill-universe import <source>                              Import a provider-specific skill
+npx skill-universe import <source> --provider <provider>        Import with explicit provider
+npx skill-universe import <source> --output <dir>               Import to custom output dir
+npx skill-universe publish <skill-dir>                          Publish to GitHub Releases
+npx skill-universe publish <skill-dir> --repo <owner/repo>     Publish to specific repo
+npx skill-universe search <query>                               Search for skills
+npx skill-universe install <owner/repo>                         Install a skill
+npx skill-universe install <owner/repo> --target <provider>    Install for specific provider
+npx skill-universe list <owner/repo>                            List available versions
+npx skill-universe list --installed                             List installed skills
+npx skill-universe version                                      Show version
+npx skill-universe help                                         Show help
 ```
 
 ## Documentation
@@ -117,14 +111,14 @@ The [`skills`](https://www.npmjs.com/package/skills) CLI (from Vercel) is a pack
 | **Distribution** | GitHub Releases with versioned tarballs | Git repos cloned via CLI |
 | **Build step required** | Yes | No |
 
-For simple text-only skills that need no metadata differences across agents, `skills` is lighter-weight and has broader agent coverage. For skills that need provider-specific metadata, scripts, configuration, or conditional content, `skill-universe` produces genuinely native output rather than one-size-fits-all copies. The two can work together — compile with `skill-universe`, distribute the output with `skills`.
+No agent strictly *requires* provider-specific metadata — a plain SKILL.md with just `name`, `description`, and instructions will load everywhere. That's why `skills` works: the minimum bar is low. But without metadata, skills lose access to features like tool restrictions (`allowed-tools`), subagent execution (`context: fork`), binary dependency checks (`requires.bins`), UI branding, and MCP server declarations. `skill-universe` produces output that takes full advantage of each provider's native capabilities, rather than settling for the lowest common denominator.
 
 ## Roadmap
 
 - **Expand provider coverage** — Add providers beyond OpenClaw, Claude Code, and Codex (e.g., Cursor, Windsurf, Gemini CLI). Each new provider gets genuinely adapted output, not just another directory path.
-- **`skills` CLI compatibility** — Compile output that is directly installable via `npx skills add`, bridging the two ecosystems so authors compile with `skill-universe` and distribute through the `skills` registry.
-- **Interactive skill discovery** — Add a browsable `skill-universe find` command with interactive selection, similar to `npx skills find`.
-- **Update detection** — `skill-universe check --updates` and `skill-universe update` commands to notify when installed skills have newer versions available.
+- **Compile-and-install** — After compilation, automatically install each provider's output into the correct local agent directory (e.g., `.claude/skills/`, `.cursor/skills/`), removing the manual copy step.
+- **Interactive skill discovery** — Add a browsable `find` command with interactive selection, similar to `npx skills find`.
+- **Update detection** — `check --updates` and `update` commands to notify when installed skills have newer versions available.
 - **GitLab and arbitrary git URL support** — Extend publishing and installation beyond GitHub-only sources.
 - **CI/CD mode** — `--yes` and `--all` flags for non-interactive compilation and batch operations in pipelines.
 - **Agent auto-detection** — Detect locally installed agents and compile/install only for those providers automatically.

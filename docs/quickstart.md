@@ -5,7 +5,7 @@ Create a cross-platform skill in 4 steps.
 ## Prerequisites
 
 - Familiarity with YAML and Markdown
-- The `skillc` CLI
+- The `skill-universe` CLI (`npx skill-universe`)
 
 ## Step 1: Create the Skill Directory
 
@@ -118,10 +118,10 @@ For provider-specific scripts, add them to `providers/X/scripts/`. They override
 
 ```bash
 # Compile for all providers
-skillc compile my-skill
+npx skill-universe compile my-skill
 
 # Compile for a specific provider
-skillc compile my-skill --target claude-code
+npx skill-universe compile my-skill --target claude-code
 ```
 
 Output appears in `dist/`:

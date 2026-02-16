@@ -6,7 +6,7 @@ OpenAI Codex skills extend Codex with task-specific capabilities. A skill packag
 
 Skills are available in the Codex CLI, IDE extension, and Codex app.
 
-This document describes Codex's native skill format — the output that `skillc compile` produces for the `codex` provider. For the unified input format, see the [Unified Skill Specification](../unified-skill-spec.md).
+This document describes Codex's native skill format — the output that `npx skill-universe compile` produces for the `codex` provider. For the unified input format, see the [Unified Skill Specification](../unified-skill-spec.md).
 
 ## Directory Structure
 

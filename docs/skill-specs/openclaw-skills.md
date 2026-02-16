@@ -4,7 +4,7 @@
 
 OpenClaw skills provide specialized instructions for specific tasks. They are auto-discovered from `~/development/openclaw/skills/`.
 
-This document describes OpenClaw's native SKILL.md format — the output that `skillc compile` produces for the `openclaw` provider. For the unified input format, see the [Unified Skill Specification](../unified-skill-spec.md).
+This document describes OpenClaw's native SKILL.md format — the output that `npx skill-universe compile` produces for the `openclaw` provider. For the unified input format, see the [Unified Skill Specification](../unified-skill-spec.md).
 
 ## Directory Structure
 

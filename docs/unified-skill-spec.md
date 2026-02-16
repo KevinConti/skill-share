@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines a system for creating skills that can be compiled for multiple AI agent skill providers from a single source. Skill developers write shared instructions once, declare provider-specific metadata separately, and use the `skillc` compiler to generate native skill packages for each target platform.
+This document defines a system for creating skills that can be compiled for multiple AI agent skill providers from a single source. Skill developers write shared instructions once, declare provider-specific metadata separately, and use the `npx skill-universe` compiler to generate native skill packages for each target platform.
 
 ## Target Users
 
@@ -26,7 +26,7 @@ Developers who wish to create skills that work across multiple AI agent platform
 | **metadata.yaml** | A provider-specific metadata file (inside `providers/X/`) containing only the fields that differ for that platform. |
 | **instructions.md** | An optional provider-specific instruction file (inside `providers/X/`) appended to the rendered INSTRUCTIONS.md during compilation. |
 | **SKILL.md** | The compiled output file consumed by a provider. Each provider has its own format. |
-| **skillc** | The CLI compiler that merges universal and provider-specific sources into native skill packages. |
+| **skill-universe** | The CLI compiler that merges universal and provider-specific sources into native skill packages. Invoked via `npx skill-universe`. |
 | **Registry** | A distribution system for publishing, searching, and installing skills. |
 
 ---
@@ -359,7 +359,7 @@ Or escape individual expressions with a backslash: `\{{not processed}}`.
 ### Query
 
 ```bash
-skillc check skill-name
+npx skill-universe check skill-name
 ```
 
 ### Output Format
@@ -398,13 +398,13 @@ Example: if `skill.yaml` has `description: "General description"` and `providers
 
 ```bash
 # Compile for all supported providers
-skillc compile skill-name
+npx skill-universe compile skill-name
 
 # Compile for specific providers
-skillc compile skill-name --providers openclaw,claude-code
+npx skill-universe compile skill-name --providers openclaw,claude-code
 
 # Compile for a single provider
-skillc compile skill-name --target codex
+npx skill-universe compile skill-name --target codex
 ```
 
 ### Output Directory Structure
@@ -441,16 +441,16 @@ dist/
 
 ## Registry
 
-Skills are distributed via GitHub Releases. The `skillc` CLI uses the GitHub CLI (`gh`) for registry operations.
+Skills are distributed via GitHub Releases. The CLI uses the GitHub CLI (`gh`) for registry operations.
 
 ### Publishing
 
 ```bash
 # Publish to GitHub Releases (infers repo from git remote)
-skillc publish skill-dir
+npx skill-universe publish skill-dir
 
 # Publish to a specific repo
-skillc publish skill-dir --repo owner/repo
+npx skill-universe publish skill-dir --repo owner/repo
 ```
 
 Publishing creates a GitHub Release tagged with the version from `skill.yaml` and uploads a tarball of the skill source directory.
@@ -459,22 +459,22 @@ Publishing creates a GitHub Release tagged with the version from `skill.yaml` an
 
 ```bash
 # Search for skills (searches GitHub repos tagged skillc-skill)
-skillc search email
+npx skill-universe search email
 
 # Install a skill from GitHub Releases
-skillc install owner/repo
+npx skill-universe install owner/repo
 
 # Install a specific version
-skillc install owner/repo@v1.2.0
+npx skill-universe install owner/repo@v1.2.0
 
 # Install for a specific provider only
-skillc install owner/repo --target claude-code
+npx skill-universe install owner/repo --target claude-code
 
 # List available versions for a repo
-skillc list owner/repo
+npx skill-universe list owner/repo
 
 # List locally installed skills
-skillc list --installed
+npx skill-universe list --installed
 ```
 
 ---
@@ -564,14 +564,14 @@ Or via config file: `~/.config/skill-name/config.json`
 
 | Command | Description |
 |---------|-------------|
-| `skillc init` | Create a new skill from template |
-| `skillc check` | Check provider support |
-| `skillc compile` | Compile for specific providers |
-| `skillc import` | Import a provider-specific skill into unified format |
-| `skillc publish` | Publish to GitHub Releases |
-| `skillc search` | Search for skills |
-| `skillc install` | Install from GitHub Releases |
-| `skillc list` | List versions or installed skills |
+| `npx skill-universe init` | Create a new skill from template |
+| `npx skill-universe check` | Check provider support |
+| `npx skill-universe compile` | Compile for specific providers |
+| `npx skill-universe import` | Import a provider-specific skill into unified format |
+| `npx skill-universe publish` | Publish to GitHub Releases |
+| `npx skill-universe search` | Search for skills |
+| `npx skill-universe install` | Install from GitHub Releases |
+| `npx skill-universe list` | List versions or installed skills |
 
 ---
 
