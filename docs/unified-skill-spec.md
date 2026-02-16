@@ -458,7 +458,7 @@ Publishing creates a GitHub Release tagged with the version from `skill.yaml` an
 ### Searching and Installing
 
 ```bash
-# Search for skills (searches GitHub repos tagged skillc-skill)
+# Search for skills (searches GitHub repos tagged skill-universe)
 npx skill-universe search email
 
 # Install a skill from GitHub Releases
