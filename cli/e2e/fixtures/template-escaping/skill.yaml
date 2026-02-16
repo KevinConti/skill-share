@@ -1,0 +1,3 @@
+name: escaping-test
+description: Tests template escaping mechanisms
+version: 1.0.0

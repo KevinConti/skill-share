@@ -1,0 +1,2 @@
+user-invocable: true
+allowed-tools: [Read, Grep]

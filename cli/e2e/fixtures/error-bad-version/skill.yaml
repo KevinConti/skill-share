@@ -1,0 +1,3 @@
+name: bad-version
+description: A skill with invalid version
+version: not-a-version

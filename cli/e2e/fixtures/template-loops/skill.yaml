@@ -1,0 +1,16 @@
+name: loops-test
+description: Tests each loop template directives
+version: 1.0.0
+
+config:
+  - name: api_key
+    description: API key for auth
+    required: true
+    secret: true
+  - name: timeout
+    description: Timeout in seconds
+    required: false
+    default: "30"
+  - name: debug
+    description: Enable debug mode
+    required: false

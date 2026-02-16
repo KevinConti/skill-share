@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "gleam build",
-    "prepare": "gleam build"
+    "prepare": "gleam build",
+    "test:e2e": "node --test e2e/**/*.test.mjs",
+    "test:e2e:update": "UPDATE_GOLDEN=1 node --test e2e/compile.test.mjs"
   },
   "files": [
     "bin/",

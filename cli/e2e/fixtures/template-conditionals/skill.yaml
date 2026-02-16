@@ -1,0 +1,4 @@
+name: conditionals-test
+description: Tests conditional template directives
+version: 1.0.0
+license: MIT

@@ -1,0 +1,3 @@
+name: script-merging
+description: Tests script file merging behavior
+version: 1.0.0

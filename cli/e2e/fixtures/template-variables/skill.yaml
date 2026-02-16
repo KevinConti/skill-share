@@ -1,0 +1,8 @@
+name: template-variables
+description: Tests template variable interpolation
+version: 1.0.0
+license: MIT
+
+metadata:
+  author: Test Author
+  tags: [testing]
