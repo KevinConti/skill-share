@@ -1,0 +1,34 @@
+{
+  "name": "skill-universe",
+  "version": "1.1.1",
+  "type": "module",
+  "description": "Cross-platform skill compiler",
+  "bin": {
+    "skill-universe": "./bin/skill_universe.mjs"
+  },
+  "scripts": {
+    "build": "gleam build",
+    "prepare": "gleam build"
+  },
+  "files": [
+    "bin/",
+    "build/dev/javascript/",
+    "src/",
+    "package.json"
+  ],
+  "keywords": [
+    "skill-universe",
+    "skills",
+    "compiler"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KevinConti/skill-share.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/KevinConti/skill-share#readme",
+  "license": "ISC",
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  }
+}
