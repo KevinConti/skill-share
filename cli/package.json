@@ -1,6 +1,6 @@
 {
   "name": "skill-universe",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "type": "module",
   "description": "Cross-platform skill compiler",
   "bin": {
@@ -25,10 +25,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/KevinConti/skill-share.git",
+    "url": "https://github.com/KevinConti/skill-universe.git",
     "directory": "cli"
   },
-  "homepage": "https://github.com/KevinConti/skill-share#readme",
+  "homepage": "https://github.com/KevinConti/skill-universe#readme",
   "license": "ISC",
   "dependencies": {
     "js-yaml": "^4.1.1"
