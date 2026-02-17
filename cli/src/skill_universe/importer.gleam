@@ -179,6 +179,8 @@ pub fn import_skill(
   provider_hint: Option(Provider),
   output_dir: String,
 ) -> Result(ImportResult, SkillError) {
+  let output_dir = directory_path(output_dir)
+
   // Resolve source (local path or URL)
   use resolved <- result.try(fetch_source(source))
 
@@ -199,13 +201,17 @@ pub fn import_skill(
   let source_dir = resolved_directory(resolved)
   use provider <- result.try(case provider_hint {
     Some(p) -> Ok(p)
-    None -> detect_provider(frontmatter.pairs, source_dir)
+    None -> detect_provider(frontmatter.pairs, directory_raw(source_dir))
   })
 
   // Read codex yaml before separation (keeps generate_metadata_yaml pure)
   let codex_yaml = case provider {
     Codex ->
-      case simplifile.read(source_dir <> "/" <> openai_yaml_relative_path()) {
+      case
+        simplifile.read(
+          directory_raw(source_dir) <> "/" <> openai_yaml_relative_path(),
+        )
+      {
         Ok(content) -> Some(content)
         Error(_) -> None
       }
@@ -235,7 +241,7 @@ pub fn import_skill(
     )
 
   // Emit to disk
-  use _ <- result.try(emit_imported(import_result, output_dir))
+  use _ <- result.try(emit_imported(import_result, directory_raw(output_dir)))
 
   Ok(import_result)
 }
@@ -903,10 +909,10 @@ fn require_skill_md(
 }
 
 /// Extract the directory path from a resolved source.
-fn resolved_directory(source: ResolvedSource) -> String {
+fn resolved_directory(source: ResolvedSource) -> DirectoryPath {
   case source {
-    SourceDirectory(path:) -> path
-    SourceFile(directory:, ..) -> directory
+    SourceDirectory(path:) -> directory_path(path)
+    SourceFile(directory:, ..) -> directory_path(directory)
   }
 }
 
@@ -919,12 +925,15 @@ pub fn emit_imported(
   import_result: ImportResult,
   output_dir: String,
 ) -> Result(Nil, SkillError) {
-  let skill_yaml_path = output_dir <> "/" <> skill_yaml_filename()
-  case simplifile.is_file(skill_yaml_path) {
+  let output_dir = directory_path(output_dir)
+  let skill_yaml_path = directory_join_file(output_dir, skill_yaml_filename())
+  case simplifile.is_file(file_raw(skill_yaml_path)) {
     Ok(True) ->
       Error(ImportError(
         "emit",
-        skill_yaml_filename() <> " already exists in " <> output_dir,
+        skill_yaml_filename()
+          <> " already exists in "
+          <> directory_raw(output_dir),
       ))
     _ -> do_emit_imported(import_result, output_dir)
   }
@@ -932,53 +941,57 @@ pub fn emit_imported(
 
 fn do_emit_imported(
   import_result: ImportResult,
-  output_dir: String,
+  output_dir: DirectoryPath,
 ) -> Result(Nil, SkillError) {
   let provider_str = types.provider_to_string(import_result.provider)
   let provider_dir =
-    output_dir <> "/" <> providers_directory_name() <> "/" <> provider_str
+    directory_join_dir(
+      output_dir,
+      providers_directory_name() <> "/" <> provider_str,
+    )
 
   use _ <- result.try(
-    simplifile.create_directory_all(provider_dir)
-    |> map_file_error(provider_dir),
+    simplifile.create_directory_all(directory_raw(provider_dir))
+    |> map_file_error(directory_raw(provider_dir)),
   )
-  let skill_yaml_path = output_dir <> "/" <> skill_yaml_filename()
-  let instructions_path = output_dir <> "/" <> instructions_filename()
-  let metadata_path = provider_dir <> "/" <> metadata_filename()
+  let skill_yaml_path = directory_join_file(output_dir, skill_yaml_filename())
+  let instructions_path =
+    directory_join_file(output_dir, instructions_filename())
+  let metadata_path = directory_join_file(provider_dir, metadata_filename())
 
   use _ <- result.try(
-    simplifile.write(skill_yaml_path, import_result.skill_yaml)
-    |> map_file_error(skill_yaml_path),
+    simplifile.write(file_raw(skill_yaml_path), import_result.skill_yaml)
+    |> map_file_error(file_raw(skill_yaml_path)),
   )
   use _ <- result.try(
-    simplifile.write(instructions_path, import_result.instructions_md)
-    |> map_file_error(instructions_path),
+    simplifile.write(file_raw(instructions_path), import_result.instructions_md)
+    |> map_file_error(file_raw(instructions_path)),
   )
   use _ <- result.try(
-    simplifile.write(metadata_path, import_result.metadata_yaml)
-    |> map_file_error(metadata_path),
+    simplifile.write(file_raw(metadata_path), import_result.metadata_yaml)
+    |> map_file_error(file_raw(metadata_path)),
   )
   use _ <- result.try(fs.copy_file_list(
     import_result.scripts,
-    provider_dir <> "/" <> scripts_directory_name(),
+    directory_raw(provider_dir) <> "/" <> scripts_directory_name(),
   ))
   use _ <- result.try(fs.copy_file_list(
     import_result.assets,
-    provider_dir <> "/" <> assets_directory_name(),
+    directory_raw(provider_dir) <> "/" <> assets_directory_name(),
   ))
 
   Ok(Nil)
 }
 
 fn collect_source_files(
-  source_dir: String,
+  source_dir: DirectoryPath,
   subdir: String,
 ) -> Result(List(FileCopy), SkillError) {
-  let dir = source_dir <> "/" <> subdir
-  case simplifile.get_files(dir) {
+  let dir = directory_join_dir(source_dir, subdir)
+  case simplifile.get_files(directory_raw(dir)) {
     Ok(files) -> {
       list.try_map(files, fn(f) {
-        let relative = string.replace(f, dir <> "/", "")
+        let relative = string.replace(f, directory_raw(dir) <> "/", "")
         use src <- result.try(
           types.parse_source_path(f)
           |> result.map_error(fn(_) {

@@ -30,6 +30,42 @@ type FileCategory {
   Assets
 }
 
+type SkillDirectory {
+  SkillDirectory(raw: String)
+}
+
+type OutputDirectory {
+  OutputDirectory(raw: String)
+}
+
+fn skill_directory(raw: String) -> SkillDirectory {
+  SkillDirectory(raw: raw)
+}
+
+fn output_directory(raw: String) -> OutputDirectory {
+  OutputDirectory(raw: raw)
+}
+
+fn skill_directory_raw(dir: SkillDirectory) -> String {
+  dir.raw
+}
+
+fn output_directory_raw(dir: OutputDirectory) -> String {
+  dir.raw
+}
+
+fn skill_directory_file(dir: SkillDirectory, filename: String) -> String {
+  skill_directory_raw(dir) <> "/" <> filename
+}
+
+fn skill_provider_file(
+  dir: SkillDirectory,
+  provider_str: String,
+  filename: String,
+) -> String {
+  skill_directory_raw(dir) <> "/providers/" <> provider_str <> "/" <> filename
+}
+
 fn file_category_to_string(category: FileCategory) -> String {
   case category {
     Scripts -> "scripts"
@@ -41,6 +77,7 @@ pub fn compile(
   skill_dir: String,
   provider_name: String,
 ) -> Result(CompiledSkill, SkillError) {
+  let skill_dir = skill_directory(skill_dir)
   use provider <- result.try(case types.provider_from_string(provider_name) {
     Ok(p) -> Ok(p)
     Error(err) ->
@@ -53,27 +90,29 @@ pub fn compile(
 }
 
 fn compile_single(
-  skill_dir: String,
+  skill_dir: SkillDirectory,
   provider: Provider,
 ) -> Result(CompiledSkill, SkillError) {
   // 1. Parse skill.yaml
+  let skill_yaml_path = skill_directory_file(skill_dir, "skill.yaml")
   use skill_content <- result.try(
-    simplifile.read(skill_dir <> "/skill.yaml")
-    |> map_file_error(skill_dir <> "/skill.yaml"),
+    simplifile.read(skill_yaml_path)
+    |> map_file_error(skill_yaml_path),
   )
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
 
   // 2. Read INSTRUCTIONS.md
+  let instructions_path = skill_directory_file(skill_dir, "INSTRUCTIONS.md")
   use instructions_content <- result.try(
-    simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
-    |> map_file_error(skill_dir <> "/INSTRUCTIONS.md"),
+    simplifile.read(instructions_path)
+    |> map_file_error(instructions_path),
   )
 
   compile_for_provider(skill_dir, provider, skill, instructions_content)
 }
 
 fn compile_for_provider(
-  skill_dir: String,
+  skill_dir: SkillDirectory,
   provider: Provider,
   skill: types.Skill,
   instructions_content: String,
@@ -81,11 +120,14 @@ fn compile_for_provider(
   let provider_str = types.provider_to_string(provider)
 
   // 1. Verify provider is supported
-  use _ <- result.try(provider.validate_provider(skill_dir, provider))
+  use _ <- result.try(provider.validate_provider(
+    skill_directory_raw(skill_dir),
+    provider,
+  ))
 
   // 2. Parse provider metadata
   let metadata_path =
-    skill_dir <> "/providers/" <> provider_str <> "/metadata.yaml"
+    skill_provider_file(skill_dir, provider_str, "metadata.yaml")
   use meta_content <- result.try(
     simplifile.read(metadata_path)
     |> map_file_error(metadata_path),
@@ -99,7 +141,12 @@ fn compile_for_provider(
   let warnings: List(CompileWarning) = case
     parser.has_frontmatter(instructions_content)
   {
-    True -> [FrontmatterInInstructions(skill_dir <> "/INSTRUCTIONS.md")]
+    True -> [
+      FrontmatterInInstructions(skill_directory_file(
+        skill_dir,
+        "INSTRUCTIONS.md",
+      )),
+    ]
     False -> []
   }
 
@@ -113,7 +160,7 @@ fn compile_for_provider(
 
   // 5. If provider-specific instructions.md exists, render and append
   let provider_instructions_path =
-    skill_dir <> "/providers/" <> provider_str <> "/instructions.md"
+    skill_provider_file(skill_dir, provider_str, "instructions.md")
   use rendered_instructions <- result.try(
     case simplifile.read(provider_instructions_path) {
       Ok(provider_content) -> {
@@ -173,12 +220,15 @@ fn compile_for_provider(
 }
 
 pub fn compile_all(skill_dir: String) -> Result(List(CompiledSkill), SkillError) {
-  use providers <- result.try(provider.discover_providers(skill_dir))
+  let skill_dir = skill_directory(skill_dir)
+  use providers <- result.try(
+    provider.discover_providers(skill_directory_raw(skill_dir)),
+  )
   case providers {
     [] ->
       Error(ProviderError(
         "none",
-        "No supported providers found in " <> skill_dir,
+        "No supported providers found in " <> skill_directory_raw(skill_dir),
       ))
     _ -> {
       use #(skill, instructions_content) <- result.try(read_shared_inputs(
@@ -195,6 +245,7 @@ pub fn compile_providers(
   skill_dir: String,
   providers: List(String),
 ) -> Result(List(CompiledSkill), SkillError) {
+  let skill_dir = skill_directory(skill_dir)
   use parsed_providers <- result.try(
     list.try_map(providers, fn(p) {
       case types.provider_from_string(p) {
@@ -221,16 +272,18 @@ pub fn compile_providers(
 }
 
 fn read_shared_inputs(
-  skill_dir: String,
+  skill_dir: SkillDirectory,
 ) -> Result(#(types.Skill, String), SkillError) {
+  let skill_yaml_path = skill_directory_file(skill_dir, "skill.yaml")
   use skill_content <- result.try(
-    simplifile.read(skill_dir <> "/skill.yaml")
-    |> map_file_error(skill_dir <> "/skill.yaml"),
+    simplifile.read(skill_yaml_path)
+    |> map_file_error(skill_yaml_path),
   )
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
+  let instructions_path = skill_directory_file(skill_dir, "INSTRUCTIONS.md")
   use instructions_content <- result.try(
-    simplifile.read(skill_dir <> "/INSTRUCTIONS.md")
-    |> map_file_error(skill_dir <> "/INSTRUCTIONS.md"),
+    simplifile.read(instructions_path)
+    |> map_file_error(instructions_path),
   )
   Ok(#(skill, instructions_content))
 }
@@ -240,11 +293,18 @@ pub fn emit(
   output_dir: String,
   skill_name: String,
 ) -> Result(Nil, SkillError) {
+  let output_dir = output_directory(output_dir)
   let provider = types.compiled_provider(compiled)
   let provider_str = types.provider_to_string(provider)
   let provider_dir = case provider {
-    Codex -> output_dir <> "/codex/.agents/skills/" <> skill_name
-    _ -> output_dir <> "/" <> provider_str <> "/" <> skill_name
+    Codex ->
+      output_directory_raw(output_dir) <> "/codex/.agents/skills/" <> skill_name
+    _ ->
+      output_directory_raw(output_dir)
+      <> "/"
+      <> provider_str
+      <> "/"
+      <> skill_name
   }
 
   use _ <- result.try(
@@ -514,6 +574,7 @@ pub fn check_dependencies(
   skill: types.Skill,
   output_dir: String,
 ) -> List(CompileWarning) {
+  let output_dir = output_directory(output_dir)
   list.filter_map(skill.dependencies, fn(dep) {
     case dep.requirement {
       RequiredDependency -> {
@@ -529,13 +590,18 @@ pub fn check_dependencies(
   })
 }
 
-fn dependency_exists(dep_name: String, output_dir: String) -> Bool {
+fn dependency_exists(dep_name: String, output_dir: OutputDirectory) -> Bool {
   // Check if dep_name/SKILL.md exists in any provider subdirectory
-  case simplifile.read_directory(output_dir) {
+  case simplifile.read_directory(output_directory_raw(output_dir)) {
     Ok(entries) ->
       list.any(entries, fn(provider_dir) {
         let skill_md_path =
-          output_dir <> "/" <> provider_dir <> "/" <> dep_name <> "/SKILL.md"
+          output_directory_raw(output_dir)
+          <> "/"
+          <> provider_dir
+          <> "/"
+          <> dep_name
+          <> "/SKILL.md"
         case simplifile.is_file(skill_md_path) {
           Ok(True) -> True
           _ -> False
@@ -550,14 +616,13 @@ fn dependency_exists(dep_name: String, output_dir: String) -> Bool {
 // ============================================================================
 
 fn collect_files(
-  skill_dir: String,
+  skill_dir: SkillDirectory,
   provider_str: String,
   category: FileCategory,
 ) -> Result(List(FileCopy), String) {
   let dir_name = file_category_to_string(category)
-  let shared_dir = skill_dir <> "/" <> dir_name
-  let provider_dir =
-    skill_dir <> "/providers/" <> provider_str <> "/" <> dir_name
+  let shared_dir = skill_directory_raw(skill_dir) <> "/" <> dir_name
+  let provider_dir = skill_provider_file(skill_dir, provider_str, dir_name)
 
   let shared_files_result = case simplifile.get_files(shared_dir) {
     Ok(files) ->

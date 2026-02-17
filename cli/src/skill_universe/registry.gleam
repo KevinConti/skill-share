@@ -13,15 +13,58 @@ import skill_universe/shell
 import skill_universe/types
 import skill_universe/version_constraint
 
+type SkillDirectory {
+  SkillDirectory(raw: String)
+}
+
+type OutputDirectory {
+  OutputDirectory(raw: String)
+}
+
+type TempDirectory {
+  TempDirectory(raw: String)
+}
+
+fn skill_directory(raw: String) -> SkillDirectory {
+  SkillDirectory(raw: raw)
+}
+
+fn output_directory(raw: String) -> OutputDirectory {
+  OutputDirectory(raw: raw)
+}
+
+fn temp_directory(raw: String) -> TempDirectory {
+  TempDirectory(raw: raw)
+}
+
+fn skill_directory_raw(dir: SkillDirectory) -> String {
+  dir.raw
+}
+
+fn output_directory_raw(dir: OutputDirectory) -> String {
+  dir.raw
+}
+
+fn temp_directory_raw(dir: TempDirectory) -> String {
+  dir.raw
+}
+
+fn skill_directory_file(dir: SkillDirectory, filename: String) -> String {
+  skill_directory_raw(dir) <> "/" <> filename
+}
+
 // ============================================================================
 // Publish
 // ============================================================================
 
 pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
+  let skill_dir = skill_directory(skill_dir)
+
   // 1. Validate skill
+  let skill_yaml_path = skill_directory_file(skill_dir, "skill.yaml")
   use skill_content <- result.try(
-    simplifile.read(skill_dir <> "/skill.yaml")
-    |> map_file_error(skill_dir <> "/skill.yaml"),
+    simplifile.read(skill_yaml_path)
+    |> map_file_error(skill_yaml_path),
   )
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
 
@@ -32,8 +75,8 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
   let tarball_path = platform.tmpdir() <> "/" <> tarball_name
 
   // 2. Create tarball of skill source directory
-  let parent = path.parent_dir(skill_dir)
-  let dirname = path.basename(skill_dir)
+  let parent = path.parent_dir(skill_directory_raw(skill_dir))
+  let dirname = path.basename(skill_directory_raw(skill_dir))
   use _ <- result.try(
     shell.exec(
       "tar czf "
@@ -86,8 +129,13 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
 }
 
 pub fn infer_repo(skill_dir: String) -> Result(String, SkillError) {
+  let skill_dir = skill_directory(skill_dir)
   use url <- result.try(
-    shell.exec("git -C " <> shell_quote(skill_dir) <> " remote get-url origin")
+    shell.exec(
+      "git -C "
+      <> shell_quote(skill_directory_raw(skill_dir))
+      <> " remote get-url origin",
+    )
     |> result.map_error(fn(_) {
       RegistryError(
         "Could not infer repository. Use --repo owner/repo or ensure a git remote is configured.",
@@ -156,6 +204,7 @@ pub fn install(
   target: Option(String),
   output_dir: String,
 ) -> Result(String, SkillError) {
+  let output_dir = output_directory(output_dir)
   use _ <- result.try(require_gh())
 
   // 1. Parse spec: "owner/repo", "owner/repo@v1.0", "owner/repo/skill", "owner/repo/skill@v1.0"
@@ -163,13 +212,15 @@ pub fn install(
 
   // 2. Create temp directory
   let tmp_dir =
-    platform.tmpdir()
-    <> "/skill-universe-install-"
-    <> string.replace(repo, "/", "-")
-  let _ = simplifile.delete(tmp_dir)
+    temp_directory(
+      platform.tmpdir()
+      <> "/skill-universe-install-"
+      <> string.replace(repo, "/", "-"),
+    )
+  let _ = simplifile.delete(temp_directory_raw(tmp_dir))
   use _ <- result.try(
-    simplifile.create_directory_all(tmp_dir)
-    |> map_file_error(tmp_dir),
+    simplifile.create_directory_all(temp_directory_raw(tmp_dir))
+    |> map_file_error(temp_directory_raw(tmp_dir)),
   )
 
   // 3. Resolve the tag to download
@@ -184,7 +235,7 @@ pub fn install(
       <> shell_quote(repo)
       <> " --pattern '*.tar.gz'"
       <> " --dir "
-      <> shell_quote(tmp_dir),
+      <> shell_quote(temp_directory_raw(tmp_dir)),
     )
     |> result.map_error(fn(e) {
       RegistryError("Failed to download release: " <> e)
@@ -192,18 +243,20 @@ pub fn install(
   )
 
   // 5. Find the downloaded tarball
-  use tarball <- result.try(case simplifile.get_files(tmp_dir) {
-    Ok(files) ->
-      case list.find(files, fn(f) { string.ends_with(f, ".tar.gz") }) {
-        Ok(f) -> Ok(f)
-        Error(_) ->
-          Error(RegistryError("No tarball found in downloaded release"))
-      }
-    Error(_) -> Error(RegistryError("Failed to read temp directory"))
-  })
+  use tarball <- result.try(
+    case simplifile.get_files(temp_directory_raw(tmp_dir)) {
+      Ok(files) ->
+        case list.find(files, fn(f) { string.ends_with(f, ".tar.gz") }) {
+          Ok(f) -> Ok(f)
+          Error(_) ->
+            Error(RegistryError("No tarball found in downloaded release"))
+        }
+      Error(_) -> Error(RegistryError("Failed to read temp directory"))
+    },
+  )
 
   // 6. Extract tarball
-  let extract_dir = tmp_dir <> "/extracted"
+  let extract_dir = temp_directory_raw(tmp_dir) <> "/extracted"
   use _ <- result.try(
     simplifile.create_directory_all(extract_dir)
     |> map_file_error(extract_dir),
@@ -223,17 +276,33 @@ pub fn install(
   // 8. Compile and emit
   use result_msg <- result.try(case target {
     Some(t) -> {
-      use compiled <- result.try(compiler.compile(skill_dir, t))
+      use compiled <- result.try(compiler.compile(
+        skill_directory_raw(skill_dir),
+        t,
+      ))
       let name = types.compiled_name(compiled)
-      use _ <- result.try(compiler.emit(compiled, output_dir, name))
-      Ok("Installed " <> name <> " (" <> t <> ") to " <> output_dir)
+      use _ <- result.try(compiler.emit(
+        compiled,
+        output_directory_raw(output_dir),
+        name,
+      ))
+      Ok(
+        "Installed "
+        <> name
+        <> " ("
+        <> t
+        <> ") to "
+        <> output_directory_raw(output_dir),
+      )
     }
     None -> {
-      use compiled_list <- result.try(compiler.compile_all(skill_dir))
+      use compiled_list <- result.try(
+        compiler.compile_all(skill_directory_raw(skill_dir)),
+      )
       use _ <- result.try(
         list.try_each(compiled_list, fn(compiled) {
           let name = types.compiled_name(compiled)
-          compiler.emit(compiled, output_dir, name)
+          compiler.emit(compiled, output_directory_raw(output_dir), name)
         }),
       )
       let provider_names =
@@ -250,7 +319,7 @@ pub fn install(
         <> " ("
         <> string.join(provider_names, ", ")
         <> ") to "
-        <> output_dir,
+        <> output_directory_raw(output_dir),
       )
     }
   })
@@ -259,7 +328,7 @@ pub fn install(
   let dep_warnings = check_install_dependencies(skill_dir, output_dir)
 
   // 10. Clean up
-  let _ = simplifile.delete(tmp_dir)
+  let _ = simplifile.delete(temp_directory_raw(tmp_dir))
 
   Ok(result_msg <> dep_warnings)
 }
@@ -327,10 +396,10 @@ fn resolve_install_tag(
   }
 }
 
-fn find_skill_dir(base_dir: String) -> Result(String, SkillError) {
+fn find_skill_dir(base_dir: String) -> Result(SkillDirectory, SkillError) {
   // Check if skill.yaml is directly in base_dir
   case simplifile.is_file(base_dir <> "/skill.yaml") {
-    Ok(True) -> Ok(base_dir)
+    Ok(True) -> Ok(skill_directory(base_dir))
     _ -> {
       // Check one level of subdirectories
       case simplifile.read_directory(base_dir) {
@@ -345,7 +414,7 @@ fn find_skill_dir(base_dir: String) -> Result(String, SkillError) {
               }
             })
           case found {
-            Ok(entry) -> Ok(base_dir <> "/" <> entry)
+            Ok(entry) -> Ok(skill_directory(base_dir <> "/" <> entry))
             Error(_) ->
               Error(RegistryError("No skill.yaml found in extracted archive"))
           }
@@ -395,12 +464,15 @@ pub fn list_versions(
 }
 
 pub fn list_installed(output_dir: String) -> Result(String, SkillError) {
-  case simplifile.read_directory(output_dir) {
-    Error(_) -> Ok("No skills installed in " <> output_dir)
+  let output_dir = output_directory(output_dir)
+  case simplifile.read_directory(output_directory_raw(output_dir)) {
+    Error(_) ->
+      Ok("No skills installed in " <> output_directory_raw(output_dir))
     Ok(entries) -> {
       let skills =
         list.flat_map(entries, fn(provider_dir) {
-          let provider_path = output_dir <> "/" <> provider_dir
+          let provider_path =
+            output_directory_raw(output_dir) <> "/" <> provider_dir
           case simplifile.read_directory(provider_path) {
             Ok(skill_entries) ->
               list.filter_map(skill_entries, fn(skill_name) {
@@ -416,19 +488,23 @@ pub fn list_installed(output_dir: String) -> Result(String, SkillError) {
           }
         })
       case skills {
-        [] -> Ok("No skills installed in " <> output_dir)
+        [] -> Ok("No skills installed in " <> output_directory_raw(output_dir))
         _ -> Ok("Installed skills:\n" <> string.join(skills, "\n"))
       }
     }
   }
 }
 
-fn check_install_dependencies(skill_dir: String, output_dir: String) -> String {
-  case simplifile.read(skill_dir <> "/skill.yaml") {
+fn check_install_dependencies(
+  skill_dir: SkillDirectory,
+  output_dir: OutputDirectory,
+) -> String {
+  case simplifile.read(skill_directory_file(skill_dir, "skill.yaml")) {
     Ok(content) ->
       case parser.parse_skill_yaml(content) {
         Ok(skill) -> {
-          let warnings = compiler.check_dependencies(skill, output_dir)
+          let warnings =
+            compiler.check_dependencies(skill, output_directory_raw(output_dir))
           case warnings {
             [] -> ""
             _ -> {
