@@ -29,30 +29,30 @@ pub fn parse_skill_yaml(content: String) -> Result(Skill, SkillError) {
 }
 
 fn parse_skill_from_node(node: yay.Node) -> Result(Skill, SkillError) {
-  use name <- result.try(
+  use name_raw <- result.try(
     yay.extract_string(node, "name")
     |> result.map_error(fn(_) {
       ValidationError("name", "Required field 'name' is missing")
     }),
   )
-  use _ <- result.try(case string.is_empty(string.trim(name)) {
-    True -> Error(ValidationError("name", "Field 'name' must not be empty"))
-    False -> Ok(Nil)
-  })
-  use description <- result.try(
+  use name <- result.try(
+    types.parse_skill_name(name_raw)
+    |> result.map_error(fn(err) {
+      ValidationError("name", domain_string_error_message(err))
+    }),
+  )
+  use description_raw <- result.try(
     yay.extract_string(node, "description")
     |> result.map_error(fn(_) {
       ValidationError("description", "Required field 'description' is missing")
     }),
   )
-  use _ <- result.try(case string.is_empty(string.trim(description)) {
-    True ->
-      Error(ValidationError(
-        "description",
-        "Field 'description' must not be empty",
-      ))
-    False -> Ok(Nil)
-  })
+  use description <- result.try(
+    types.parse_skill_description(description_raw)
+    |> result.map_error(fn(err) {
+      ValidationError("description", domain_string_error_message(err))
+    }),
+  )
   use version_str <- result.try(
     yay.extract_string(node, "version")
     |> result.map_error(fn(_) {
@@ -77,24 +77,30 @@ fn parse_skill_from_node(node: yay.Node) -> Result(Skill, SkillError) {
   let metadata = parse_metadata(node)
   let dependencies = parse_dependencies(node)
   // Check for self-dependency (circular reference to self)
-  use _ <- result.try(case list.find(dependencies, fn(d) { d.name == name }) {
-    Ok(_) ->
-      Error(ValidationError(
-        "dependencies",
-        "Skill cannot depend on itself: " <> name,
-      ))
-    Error(_) -> Ok(Nil)
-  })
+  use _ <- result.try(
+    case
+      list.find(dependencies, fn(d) {
+        types.dependency_name_value(d.name) == types.skill_name_value(name)
+      })
+    {
+      Ok(_) ->
+        Error(ValidationError(
+          "dependencies",
+          "Skill cannot depend on itself: " <> types.skill_name_value(name),
+        ))
+      Error(_) -> Ok(Nil)
+    },
+  )
   use dependencies <- result.try(check_unique_names(
     dependencies,
-    fn(d: Dependency) { d.name },
+    fn(d: Dependency) { types.dependency_name_value(d.name) },
     "dependencies",
     "dependency",
   ))
   let config = parse_config(node)
   use config <- result.try(check_unique_names(
     config,
-    fn(c: ConfigField) { c.name },
+    fn(c: ConfigField) { types.config_field_name_value(c.name) },
     "config",
     "config field",
   ))
@@ -143,9 +149,8 @@ fn parse_dependencies(node: yay.Node) -> List(Dependency) {
       list.filter_map(items, fn(item) {
         case yay.extract_string(item, "name") {
           Ok(name) -> {
-            case string.is_empty(string.trim(name)) {
-              True -> Error(Nil)
-              False -> {
+            case types.parse_dependency_name(name) {
+              Ok(parsed_name) -> {
                 let version_str =
                   yay.extract_string(item, "version")
                   |> result.unwrap("*")
@@ -155,15 +160,18 @@ fn parse_dependencies(node: yay.Node) -> List(Dependency) {
                       yay.extract_bool_or(item, "optional", False)
                       |> result.unwrap(False)
                     Ok(Dependency(
-                      name: name,
+                      name: parsed_name,
                       version: version,
-                      optional: optional,
+                      requirement: types.dependency_requirement_from_optional(
+                        optional,
+                      ),
                     ))
                   }
                   // Skip dependencies with invalid version constraints
                   Error(_) -> Error(Nil)
                 }
               }
+              Error(_) -> Error(Nil)
             }
           }
           Error(_) -> Error(Nil)
@@ -179,9 +187,8 @@ fn parse_config(node: yay.Node) -> List(ConfigField) {
       list.filter_map(items, fn(item) {
         case yay.extract_string(item, "name") {
           Ok(name) -> {
-            case string.is_empty(string.trim(name)) {
-              True -> Error(Nil)
-              False -> {
+            case types.parse_config_field_name(name) {
+              Ok(parsed_name) -> {
                 let description =
                   yay.extract_string(item, "description") |> result.unwrap("")
                 let required =
@@ -202,12 +209,13 @@ fn parse_config(node: yay.Node) -> List(ConfigField) {
                     }
                 }
                 Ok(ConfigField(
-                  name: name,
-                  description: description,
+                  name: parsed_name,
+                  description: types.config_field_description(description),
                   requirement: requirement,
                   secret: secret,
                 ))
               }
+              Error(_) -> Error(Nil)
             }
           }
           Error(_) -> Error(Nil)
@@ -275,5 +283,17 @@ fn yaml_error_to_skill_error(file: String, err: yay.YamlError) -> SkillError {
   case err {
     yay.ParsingError(msg, _loc) -> ParseError(file, msg)
     yay.UnexpectedParsingError -> ParseError(file, "Unexpected parsing error")
+  }
+}
+
+fn domain_string_error_message(error: types.DomainStringError) -> String {
+  case error {
+    types.EmptyString(field:) -> "Field '" <> field <> "' must not be empty"
+    types.SurroundingWhitespace(field:, value:) ->
+      "Field '"
+      <> field
+      <> "' must not contain leading or trailing whitespace: '"
+      <> value
+      <> "'"
   }
 }

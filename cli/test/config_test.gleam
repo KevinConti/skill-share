@@ -69,7 +69,8 @@ pub fn check_missing_required_test() {
   let missing =
     list.filter_map(statuses, fn(s) {
       case s {
-        config.MissingRequired(field:) -> Ok(field.name)
+        config.MissingRequired(field:) ->
+          Ok(types.config_field_name_value(field.name))
         _ -> Error(Nil)
       }
     })
@@ -83,7 +84,8 @@ pub fn check_optional_not_missing_test() {
   let missing =
     list.filter_map(statuses, fn(s) {
       case s {
-        config.MissingRequired(field:) -> Ok(field.name)
+        config.MissingRequired(field:) ->
+          Ok(types.config_field_name_value(field.name))
         _ -> Error(Nil)
       }
     })
@@ -98,10 +100,14 @@ pub fn check_default_used_when_not_set_test() {
   let timeout_status =
     list.find(statuses, fn(s) {
       case s {
-        config.Provided(field:, ..) -> field.name == "timeout"
-        config.DefaultUsed(field:, ..) -> field.name == "timeout"
-        config.MissingRequired(field:) -> field.name == "timeout"
-        config.Skipped(field:) -> field.name == "timeout"
+        config.Provided(field:, ..) ->
+          types.config_field_name_value(field.name) == "timeout"
+        config.DefaultUsed(field:, ..) ->
+          types.config_field_name_value(field.name) == "timeout"
+        config.MissingRequired(field:) ->
+          types.config_field_name_value(field.name) == "timeout"
+        config.Skipped(field:) ->
+          types.config_field_name_value(field.name) == "timeout"
       }
     })
   let assert Ok(config.DefaultUsed(_, default)) = timeout_status
@@ -120,7 +126,8 @@ pub fn check_empty_string_counts_as_missing_for_required_test() {
   let missing =
     list.filter_map(statuses, fn(s) {
       case s {
-        config.MissingRequired(field:) -> Ok(field.name)
+        config.MissingRequired(field:) ->
+          Ok(types.config_field_name_value(field.name))
         _ -> Error(Nil)
       }
     })
@@ -150,8 +157,8 @@ pub fn cli_config_check_missing_dir_test() {
 fn test_skill_with_config() -> Skill {
   let assert Ok(v) = semver.parse("1.0.0")
   Skill(
-    name: "test-skill",
-    description: "A test skill",
+    name: must_skill_name("test-skill"),
+    description: must_skill_description("A test skill"),
     version: v,
     license: None,
     homepage: None,
@@ -160,20 +167,20 @@ fn test_skill_with_config() -> Skill {
     dependencies: [],
     config: [
       ConfigField(
-        name: "api_key",
-        description: "API key for the service",
+        name: must_config_field_name("api_key"),
+        description: types.config_field_description("API key for the service"),
         requirement: Required,
         secret: True,
       ),
       ConfigField(
-        name: "timeout",
-        description: "Request timeout",
+        name: must_config_field_name("timeout"),
+        description: types.config_field_description("Request timeout"),
         requirement: OptionalWithDefault("30"),
         secret: False,
       ),
       ConfigField(
-        name: "debug",
-        description: "Enable debug mode",
+        name: must_config_field_name("debug"),
+        description: types.config_field_description("Enable debug mode"),
         requirement: Optional,
         secret: False,
       ),
@@ -184,8 +191,8 @@ fn test_skill_with_config() -> Skill {
 fn test_skill_no_config() -> Skill {
   let assert Ok(v) = semver.parse("1.0.0")
   Skill(
-    name: "simple-skill",
-    description: "A simple skill",
+    name: must_skill_name("simple-skill"),
+    description: must_skill_description("A simple skill"),
     version: v,
     license: None,
     homepage: None,
@@ -194,4 +201,19 @@ fn test_skill_no_config() -> Skill {
     dependencies: [],
     config: [],
   )
+}
+
+fn must_skill_name(raw: String) -> types.SkillName {
+  let assert Ok(name) = types.parse_skill_name(raw)
+  name
+}
+
+fn must_skill_description(raw: String) -> types.SkillDescription {
+  let assert Ok(description) = types.parse_skill_description(raw)
+  description
+}
+
+fn must_config_field_name(raw: String) -> types.ConfigFieldName {
+  let assert Ok(name) = types.parse_config_field_name(raw)
+  name
 }

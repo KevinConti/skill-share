@@ -14,8 +14,9 @@ import skill_universe/semver
 import skill_universe/template
 import skill_universe/types.{
   type CompileWarning, type CompiledSkill, type FileCopy, type Provider,
-  ClaudeCode, Codex, CompiledSkill, FileCopy, FrontmatterInInstructions,
-  MissingDependency, OpenClaw,
+  ClaudeCode, ClaudeCodeCompiled, Codex, CodexCompiled, FileCopy,
+  FrontmatterInInstructions, MissingDependency, OpenClaw, OpenClawCompiled,
+  OptionalDependency, RequiredDependency,
 }
 import skill_universe/yaml
 import yay
@@ -42,10 +43,10 @@ pub fn compile(
 ) -> Result(CompiledSkill, SkillError) {
   use provider <- result.try(case types.provider_from_string(provider_name) {
     Ok(p) -> Ok(p)
-    Error(_) ->
+    Error(err) ->
       Error(ProviderError(
-        provider_name,
-        "Unknown provider '" <> provider_name <> "'",
+        types.provider_parse_error_input(err),
+        "Unknown provider '" <> types.provider_parse_error_input(err) <> "'",
       ))
   })
   compile_single(skill_dir, provider)
@@ -133,24 +134,42 @@ fn compile_for_provider(
     format_skill_md(skill, provider, provider_meta, rendered_instructions)
 
   // 7. Collect scripts and assets
-  let scripts = collect_files(skill_dir, provider_str, Scripts)
-  let assets = collect_files(skill_dir, provider_str, Assets)
+  use scripts <- result.try(
+    collect_files(skill_dir, provider_str, Scripts)
+    |> result.map_error(fn(message) { ProviderError(provider_str, message) }),
+  )
+  use assets <- result.try(
+    collect_files(skill_dir, provider_str, Assets)
+    |> result.map_error(fn(message) { ProviderError(provider_str, message) }),
+  )
 
-  // 8. Generate agents/openai.yaml for Codex
-  let codex_yaml = case provider {
-    Codex -> Some(generate_codex_yaml(provider_meta))
-    _ -> None
-  }
-
-  Ok(CompiledSkill(
-    name: skill.name,
-    provider: provider,
-    skill_md: skill_md,
-    scripts: scripts,
-    assets: assets,
-    warnings: warnings,
-    codex_yaml: codex_yaml,
-  ))
+  Ok(case provider {
+    OpenClaw ->
+      OpenClawCompiled(
+        name: skill.name,
+        skill_md: skill_md,
+        scripts: scripts,
+        assets: assets,
+        warnings: warnings,
+      )
+    ClaudeCode ->
+      ClaudeCodeCompiled(
+        name: skill.name,
+        skill_md: skill_md,
+        scripts: scripts,
+        assets: assets,
+        warnings: warnings,
+      )
+    Codex ->
+      CodexCompiled(
+        name: skill.name,
+        skill_md: skill_md,
+        scripts: scripts,
+        assets: assets,
+        warnings: warnings,
+        codex_yaml: generate_codex_yaml(provider_meta),
+      )
+  })
 }
 
 pub fn compile_all(skill_dir: String) -> Result(List(CompiledSkill), SkillError) {
@@ -180,7 +199,11 @@ pub fn compile_providers(
     list.try_map(providers, fn(p) {
       case types.provider_from_string(p) {
         Ok(provider) -> Ok(provider)
-        Error(_) -> Error(ProviderError(p, "Unknown provider '" <> p <> "'"))
+        Error(err) ->
+          Error(ProviderError(
+            types.provider_parse_error_input(err),
+            "Unknown provider '" <> types.provider_parse_error_input(err) <> "'",
+          ))
       }
     }),
   )
@@ -217,8 +240,9 @@ pub fn emit(
   output_dir: String,
   skill_name: String,
 ) -> Result(Nil, SkillError) {
-  let provider_str = types.provider_to_string(compiled.provider)
-  let provider_dir = case compiled.provider {
+  let provider = types.compiled_provider(compiled)
+  let provider_str = types.provider_to_string(provider)
+  let provider_dir = case provider {
     Codex -> output_dir <> "/codex/.agents/skills/" <> skill_name
     _ -> output_dir <> "/" <> provider_str <> "/" <> skill_name
   }
@@ -230,12 +254,15 @@ pub fn emit(
 
   // Write SKILL.md
   use _ <- result.try(
-    simplifile.write(provider_dir <> "/SKILL.md", compiled.skill_md)
+    simplifile.write(
+      provider_dir <> "/SKILL.md",
+      types.compiled_skill_md(compiled),
+    )
     |> map_file_error(provider_dir <> "/SKILL.md"),
   )
 
   // Write agents/openai.yaml if present (Codex only)
-  use _ <- result.try(case compiled.codex_yaml {
+  use _ <- result.try(case types.compiled_codex_yaml(compiled) {
     Some(yaml_content) -> {
       let agents_dir = provider_dir <> "/agents"
       use _ <- result.try(
@@ -250,13 +277,13 @@ pub fn emit(
 
   // Copy scripts
   use _ <- result.try(fs.copy_file_list(
-    compiled.scripts,
+    types.compiled_scripts(compiled),
     provider_dir <> "/scripts",
   ))
 
   // Copy assets
   use _ <- result.try(fs.copy_file_list(
-    compiled.assets,
+    types.compiled_assets(compiled),
     provider_dir <> "/assets",
   ))
 
@@ -289,9 +316,14 @@ fn build_base_frontmatter(
   let universal_keys = ["name", "description", "version"]
 
   let version_str = semver.to_string(skill.version)
-  let name = meta_string_or(provider_meta, "name", skill.name)
+  let name =
+    meta_string_or(provider_meta, "name", types.skill_name_value(skill.name))
   let description =
-    meta_string_or(provider_meta, "description", skill.description)
+    meta_string_or(
+      provider_meta,
+      "description",
+      types.skill_description_value(skill.description),
+    )
   let version = meta_string_or(provider_meta, "version", version_str)
 
   let lines = [
@@ -360,8 +392,9 @@ fn format_codex(skill: types.Skill, body: String) -> String {
   let version_str = semver.to_string(skill.version)
   let frontmatter_lines = [
     "---",
-    "name: " <> yaml.quote_string(skill.name),
-    "description: " <> yaml.quote_string(skill.description),
+    "name: " <> yaml.quote_string(types.skill_name_value(skill.name)),
+    "description: "
+      <> yaml.quote_string(types.skill_description_value(skill.description)),
     "version: " <> version_str,
     "---",
   ]
@@ -482,14 +515,16 @@ pub fn check_dependencies(
   output_dir: String,
 ) -> List(CompileWarning) {
   list.filter_map(skill.dependencies, fn(dep) {
-    case dep.optional {
-      True -> Error(Nil)
-      False -> {
-        case dependency_exists(dep.name, output_dir) {
+    case dep.requirement {
+      RequiredDependency -> {
+        case
+          dependency_exists(types.dependency_name_value(dep.name), output_dir)
+        {
           True -> Error(Nil)
           False -> Ok(MissingDependency(dep))
         }
       }
+      OptionalDependency -> Error(Nil)
     }
   })
 }
@@ -518,32 +553,76 @@ fn collect_files(
   skill_dir: String,
   provider_str: String,
   category: FileCategory,
-) -> List(FileCopy) {
+) -> Result(List(FileCopy), String) {
   let dir_name = file_category_to_string(category)
   let shared_dir = skill_dir <> "/" <> dir_name
   let provider_dir =
     skill_dir <> "/providers/" <> provider_str <> "/" <> dir_name
 
-  let shared_files = case simplifile.get_files(shared_dir) {
+  let shared_files_result = case simplifile.get_files(shared_dir) {
     Ok(files) ->
-      list.map(files, fn(f) {
-        let relative = string.replace(f, shared_dir <> "/", "")
-        FileCopy(src: f, relative_path: relative)
+      list.try_map(files, fn(f) {
+        make_file_copy(
+          f,
+          shared_dir,
+          "Invalid shared " <> dir_name <> " file path",
+        )
       })
-    Error(_) -> []
+    Error(_) -> Ok([])
   }
 
-  let provider_files = case simplifile.get_files(provider_dir) {
+  let provider_files_result = case simplifile.get_files(provider_dir) {
     Ok(files) ->
-      list.map(files, fn(f) {
-        let relative = string.replace(f, provider_dir <> "/", "")
-        FileCopy(src: f, relative_path: relative)
+      list.try_map(files, fn(f) {
+        make_file_copy(
+          f,
+          provider_dir,
+          "Invalid provider " <> dir_name <> " file path",
+        )
       })
-    Error(_) -> []
+    Error(_) -> Ok([])
   }
+
+  use shared_files <- result.try(shared_files_result)
+  use provider_files <- result.try(provider_files_result)
 
   // Merge: provider files override shared files with same relative path
-  merge_file_lists(shared_files, provider_files)
+  Ok(merge_file_lists(shared_files, provider_files))
+}
+
+fn make_file_copy(
+  src: String,
+  base_dir: String,
+  error_prefix: String,
+) -> Result(FileCopy, String) {
+  let relative = string.replace(src, base_dir <> "/", "")
+  use source_path <- result.try(
+    types.parse_source_path(src)
+    |> result.map_error(fn(_) { error_prefix <> ": '" <> src <> "'" }),
+  )
+  use relative_path <- result.try(
+    types.parse_relative_path(relative)
+    |> result.map_error(fn(err) {
+      error_prefix
+      <> ": '"
+      <> src
+      <> "' ("
+      <> relative_path_error_message(err)
+      <> ")"
+    }),
+  )
+  Ok(FileCopy(src: source_path, relative_path: relative_path))
+}
+
+fn relative_path_error_message(err: types.RelativePathError) -> String {
+  case err {
+    types.EmptyRelativePath -> "relative path is empty"
+    types.AbsoluteRelativePath(value:) -> "absolute path '" <> value <> "'"
+    types.ParentTraversalRelativePath(value:) ->
+      "parent traversal segment in '" <> value <> "'"
+    types.InvalidRelativePathSegment(value:) ->
+      "invalid relative path segment in '" <> value <> "'"
+  }
 }
 
 fn merge_file_lists(
@@ -551,8 +630,10 @@ fn merge_file_lists(
   provider: List(FileCopy),
 ) -> List(FileCopy) {
   let provider_paths =
-    set.from_list(list.map(provider, fn(f) { f.relative_path }))
+    set.from_list(list.map(provider, types.file_copy_relative_path))
   let filtered_shared =
-    list.filter(shared, fn(f) { !set.contains(provider_paths, f.relative_path) })
+    list.filter(shared, fn(f) {
+      !set.contains(provider_paths, types.file_copy_relative_path(f))
+    })
   list.append(filtered_shared, provider)
 }

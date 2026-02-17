@@ -221,8 +221,8 @@ pub fn import_skill(
   let instructions_md = string.trim(frontmatter.body) <> "\n"
 
   // Collect scripts and assets from source dir
-  let scripts = collect_source_files(source_dir, "scripts")
-  let assets = collect_source_files(source_dir, "assets")
+  use scripts <- result.try(collect_source_files(source_dir, "scripts"))
+  use assets <- result.try(collect_source_files(source_dir, "assets"))
 
   let import_result =
     ImportResult(
@@ -970,15 +970,58 @@ fn do_emit_imported(
   Ok(Nil)
 }
 
-fn collect_source_files(source_dir: String, subdir: String) -> List(FileCopy) {
+fn collect_source_files(
+  source_dir: String,
+  subdir: String,
+) -> Result(List(FileCopy), SkillError) {
   let dir = source_dir <> "/" <> subdir
   case simplifile.get_files(dir) {
-    Ok(files) ->
-      list.map(files, fn(f) {
+    Ok(files) -> {
+      list.try_map(files, fn(f) {
         let relative = string.replace(f, dir <> "/", "")
-        FileCopy(src: f, relative_path: relative)
+        use src <- result.try(
+          types.parse_source_path(f)
+          |> result.map_error(fn(_) {
+            ImportError(
+              "source",
+              "Invalid source path while importing "
+                <> subdir
+                <> ": '"
+                <> f
+                <> "'",
+            )
+          }),
+        )
+        use relative_path <- result.try(
+          types.parse_relative_path(relative)
+          |> result.map_error(fn(err) {
+            ImportError(
+              "source",
+              "Invalid relative path while importing "
+                <> subdir
+                <> ": '"
+                <> relative
+                <> "' ("
+                <> relative_path_error_message(err)
+                <> ")",
+            )
+          }),
+        )
+        Ok(FileCopy(src: src, relative_path: relative_path))
       })
-    Error(_) -> []
+    }
+    Error(_) -> Ok([])
+  }
+}
+
+fn relative_path_error_message(err: types.RelativePathError) -> String {
+  case err {
+    types.EmptyRelativePath -> "relative path is empty"
+    types.AbsoluteRelativePath(value:) -> "absolute path '" <> value <> "'"
+    types.ParentTraversalRelativePath(value:) ->
+      "parent traversal segment in '" <> value <> "'"
+    types.InvalidRelativePathSegment(value:) ->
+      "invalid relative path segment in '" <> value <> "'"
   }
 }
 

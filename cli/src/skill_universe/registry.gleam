@@ -26,8 +26,9 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
   use skill <- result.try(parser.parse_skill_yaml(skill_content))
 
   let version_str = semver.to_string(skill.version)
-  let tag = skill.name <> "-v" <> version_str
-  let tarball_name = skill.name <> "-" <> version_str <> ".tar.gz"
+  let skill_name = types.skill_name_value(skill.name)
+  let tag = skill_name <> "-v" <> version_str
+  let tarball_name = skill_name <> "-" <> version_str <> ".tar.gz"
   let tarball_path = platform.tmpdir() <> "/" <> tarball_name
 
   // 2. Create tarball of skill source directory
@@ -67,7 +68,7 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
       <> " --repo "
       <> shell_quote(repo)
       <> " --title "
-      <> shell_quote(skill.name <> " " <> tag)
+      <> shell_quote(skill_name <> " " <> tag)
       <> " --notes "
       <> shell_quote("Published by skill-universe"),
     )
@@ -80,7 +81,7 @@ pub fn publish(skill_dir: String, repo: String) -> Result(String, SkillError) {
   let _ = simplifile.delete(tarball_path)
 
   Ok(
-    "Published " <> skill.name <> " " <> tag <> " to " <> repo <> "\n" <> output,
+    "Published " <> skill_name <> " " <> tag <> " to " <> repo <> "\n" <> output,
   )
 }
 
@@ -223,7 +224,7 @@ pub fn install(
   use result_msg <- result.try(case target {
     Some(t) -> {
       use compiled <- result.try(compiler.compile(skill_dir, t))
-      let name = compiled.name
+      let name = types.compiled_name(compiled)
       use _ <- result.try(compiler.emit(compiled, output_dir, name))
       Ok("Installed " <> name <> " (" <> t <> ") to " <> output_dir)
     }
@@ -231,14 +232,16 @@ pub fn install(
       use compiled_list <- result.try(compiler.compile_all(skill_dir))
       use _ <- result.try(
         list.try_each(compiled_list, fn(compiled) {
-          let name = compiled.name
+          let name = types.compiled_name(compiled)
           compiler.emit(compiled, output_dir, name)
         }),
       )
       let provider_names =
-        list.map(compiled_list, fn(c) { types.provider_to_string(c.provider) })
+        list.map(compiled_list, fn(c) {
+          types.provider_to_string(types.compiled_provider(c))
+        })
       let name = case compiled_list {
-        [first, ..] -> first.name
+        [first, ..] -> types.compiled_name(first)
         [] -> "skill"
       }
       Ok(
@@ -435,7 +438,7 @@ fn check_install_dependencies(skill_dir: String, output_dir: String) -> String {
                     types.MissingDependency(dep) ->
                       Ok(
                         "\nWarning: missing dependency '"
-                        <> dep.name
+                        <> types.dependency_name_value(dep.name)
                         <> "' ("
                         <> version_constraint.to_string(dep.version)
                         <> ")",

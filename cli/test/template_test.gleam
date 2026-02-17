@@ -206,12 +206,7 @@ pub fn if_block_false_bool_test() {
   // #if on a false boolean should exclude the block
   let skill =
     Skill(..test_skill(), config: [
-      ConfigField(
-        name: "test",
-        description: "test",
-        requirement: Optional,
-        secret: False,
-      ),
+      config_field("test", "test", Optional, False),
     ])
   let result =
     template.render_template(
@@ -240,18 +235,8 @@ pub fn each_block_test() {
 pub fn each_block_at_index_test() {
   let skill =
     Skill(..test_skill(), config: [
-      ConfigField(
-        name: "a",
-        description: "",
-        requirement: Optional,
-        secret: False,
-      ),
-      ConfigField(
-        name: "b",
-        description: "",
-        requirement: Optional,
-        secret: False,
-      ),
+      config_field("a", "", Optional, False),
+      config_field("b", "", Optional, False),
     ])
   let result =
     template.render_template(
@@ -268,24 +253,9 @@ pub fn each_block_at_index_test() {
 pub fn each_block_at_first_last_test() {
   let skill =
     Skill(..test_skill(), config: [
-      ConfigField(
-        name: "first",
-        description: "",
-        requirement: Optional,
-        secret: False,
-      ),
-      ConfigField(
-        name: "middle",
-        description: "",
-        requirement: Optional,
-        secret: False,
-      ),
-      ConfigField(
-        name: "last",
-        description: "",
-        requirement: Optional,
-        secret: False,
-      ),
+      config_field("first", "", Optional, False),
+      config_field("middle", "", Optional, False),
+      config_field("last", "", Optional, False),
     ])
   let result =
     template.render_template(
@@ -537,15 +507,15 @@ pub fn unclosed_unless_block_fails_test() {
 pub fn each_dependencies_test() {
   let skill =
     Skill(..test_skill(), dependencies: [
-      types.Dependency(
-        name: "helper-skill",
-        version: assert_parse_vc("^1.0.0"),
-        optional: False,
+      dependency(
+        "helper-skill",
+        assert_parse_vc("^1.0.0"),
+        types.RequiredDependency,
       ),
-      types.Dependency(
-        name: "extra-skill",
-        version: assert_parse_vc("~2.0.0"),
-        optional: True,
+      dependency(
+        "extra-skill",
+        assert_parse_vc("~2.0.0"),
+        types.OptionalDependency,
       ),
     ])
   let result =
@@ -717,8 +687,8 @@ pub fn undefined_deep_nested_path_resolves_empty_test() {
 fn test_skill() -> Skill {
   let assert Ok(v) = semver.parse("1.0.0")
   Skill(
-    name: "test-skill",
-    description: "A test skill",
+    name: must_skill_name("test-skill"),
+    description: must_skill_description("A test skill"),
     version: v,
     license: Some("MIT"),
     homepage: None,
@@ -728,12 +698,7 @@ fn test_skill() -> Skill {
     ),
     dependencies: [],
     config: [
-      ConfigField(
-        name: "api_key",
-        description: "API key",
-        requirement: Required,
-        secret: True,
-      ),
+      config_field("api_key", "API key", Required, True),
     ],
   )
 }
@@ -756,4 +721,50 @@ fn test_provider_meta() -> yay.Node {
       ]),
     ),
   ])
+}
+
+fn config_field(
+  name: String,
+  description: String,
+  requirement: types.ConfigRequirement,
+  secret: Bool,
+) -> types.ConfigField {
+  ConfigField(
+    name: must_config_field_name(name),
+    description: types.config_field_description(description),
+    requirement: requirement,
+    secret: secret,
+  )
+}
+
+fn dependency(
+  name: String,
+  version: version_constraint.VersionConstraint,
+  requirement: types.DependencyRequirement,
+) -> types.Dependency {
+  types.Dependency(
+    name: must_dependency_name(name),
+    version: version,
+    requirement: requirement,
+  )
+}
+
+fn must_skill_name(raw: String) -> types.SkillName {
+  let assert Ok(name) = types.parse_skill_name(raw)
+  name
+}
+
+fn must_skill_description(raw: String) -> types.SkillDescription {
+  let assert Ok(description) = types.parse_skill_description(raw)
+  description
+}
+
+fn must_config_field_name(raw: String) -> types.ConfigFieldName {
+  let assert Ok(name) = types.parse_config_field_name(raw)
+  name
+}
+
+fn must_dependency_name(raw: String) -> types.DependencyName {
+  let assert Ok(name) = types.parse_dependency_name(raw)
+  name
 }

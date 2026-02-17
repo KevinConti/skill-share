@@ -1,7 +1,9 @@
 import gleam/list
 import gleam/string
 import skill_universe/types.{
-  type ConfigField, type Skill, Optional, OptionalWithDefault, Required,
+  type ConfigField, type ConfigFieldName, type Skill, type SkillName, Optional,
+  OptionalWithDefault, Required, config_field_description_value,
+  config_field_name_value, skill_name_value,
 }
 
 pub type ConfigStatus {
@@ -14,16 +16,20 @@ pub type ConfigStatus {
 /// Generate a .env-format template for a skill's configuration fields.
 pub fn generate_template(skill: Skill) -> String {
   case skill.config {
-    [] -> "# No configuration fields defined for " <> skill.name <> "\n"
+    [] ->
+      "# No configuration fields defined for "
+      <> skill_name_value(skill.name)
+      <> "\n"
     fields -> {
       let header =
         "# Configuration for "
-        <> skill.name
+        <> skill_name_value(skill.name)
         <> "\n"
         <> "# Set these environment variables before using the skill.\n\n"
       let lines =
         list.map(fields, fn(field) {
-          let comment = "# " <> field.description <> "\n"
+          let comment =
+            "# " <> config_field_description_value(field.description) <> "\n"
           let req_comment = case field.requirement {
             Required -> "# Required\n"
             Optional -> "# Optional\n"
@@ -75,11 +81,11 @@ pub fn check_with_lookup(
   })
 }
 
-fn config_env_name(skill_name: String, field_name: String) -> String {
+fn config_env_name(skill_name: SkillName, field_name: ConfigFieldName) -> String {
   "SKILL_CONFIG_"
-  <> to_upper_snake(skill_name)
+  <> to_upper_snake(skill_name_value(skill_name))
   <> "_"
-  <> to_upper_snake(field_name)
+  <> to_upper_snake(config_field_name_value(field_name))
 }
 
 fn to_upper_snake(s: String) -> String {

@@ -134,8 +134,8 @@ fn do_compile(
 ) -> Result(String, String) {
   case compiler.compile(skill_dir, target) {
     Ok(compiled) -> {
-      let warning_lines = format_warnings(compiled.warnings)
-      case compiler.emit(compiled, output_dir, compiled.name) {
+      let warning_lines = format_warnings(types.compiled_warnings(compiled))
+      case compiler.emit(compiled, output_dir, types.compiled_name(compiled)) {
         Ok(_) ->
           Ok(warning_lines <> "Compiled " <> target <> " -> " <> output_dir)
         Error(err) -> Error("Error: " <> error.to_string(err))
@@ -182,13 +182,13 @@ fn emit_compiled_list(
 ) -> Result(String, String) {
   use lines <- result.try(
     list.try_map(compiled_list, fn(compiled) {
-      let warning_lines = format_warnings(compiled.warnings)
-      case compiler.emit(compiled, output_dir, compiled.name) {
+      let warning_lines = format_warnings(types.compiled_warnings(compiled))
+      case compiler.emit(compiled, output_dir, types.compiled_name(compiled)) {
         Ok(_) ->
           Ok(
             warning_lines
             <> "Compiled "
-            <> types.provider_to_string(compiled.provider)
+            <> types.provider_to_string(types.compiled_provider(compiled))
             <> " -> "
             <> output_dir,
           )
@@ -266,10 +266,10 @@ fn do_import(
     Some(p) ->
       case types.provider_from_string(p) {
         Ok(provider) -> Ok(Some(provider))
-        Error(_) ->
+        Error(err) ->
           Error(
             "Error: Unknown provider '"
-            <> p
+            <> types.provider_parse_error_input(err)
             <> "'. Use "
             <> types.all_provider_names(),
           )
@@ -314,18 +314,34 @@ fn do_config_check(skill_dir: String) -> Result(String, String) {
             list.filter_map(statuses, fn(s) {
               case s {
                 config.MissingRequired(field:) ->
-                  Ok("  MISSING: " <> field.name <> " - " <> field.description)
+                  Ok(
+                    "  MISSING: "
+                    <> types.config_field_name_value(field.name)
+                    <> " - "
+                    <> types.config_field_description_value(field.description),
+                  )
                 _ -> Error(Nil)
               }
             })
           let satisfied =
             list.filter_map(statuses, fn(s) {
               case s {
-                config.Provided(field:, ..) -> Ok("  OK: " <> field.name)
+                config.Provided(field:, ..) ->
+                  Ok("  OK: " <> types.config_field_name_value(field.name))
                 config.DefaultUsed(field:, default:) ->
-                  Ok("  OK: " <> field.name <> " (default: " <> default <> ")")
+                  Ok(
+                    "  OK: "
+                    <> types.config_field_name_value(field.name)
+                    <> " (default: "
+                    <> default
+                    <> ")",
+                  )
                 config.Skipped(field:) ->
-                  Ok("  OK: " <> field.name <> " (not set)")
+                  Ok(
+                    "  OK: "
+                    <> types.config_field_name_value(field.name)
+                    <> " (not set)",
+                  )
                 config.MissingRequired(..) -> Error(Nil)
               }
             })
@@ -333,14 +349,14 @@ fn do_config_check(skill_dir: String) -> Result(String, String) {
             [] ->
               Ok(
                 "All configuration satisfied for "
-                <> skill.name
+                <> types.skill_name_value(skill.name)
                 <> "\n"
                 <> string.join(satisfied, "\n"),
               )
             _ ->
               Error(
                 "Missing configuration for "
-                <> skill.name
+                <> types.skill_name_value(skill.name)
                 <> ":\n"
                 <> string.join(missing, "\n")
                 <> case satisfied {
@@ -361,7 +377,10 @@ fn do_check(skill_dir: String) -> Result(String, String) {
       case parser.parse_skill_yaml(content) {
         Error(err) -> Error("Error: " <> error.to_string(err))
         Ok(skill) -> {
-          let header = skill.name <> " v" <> semver.to_string(skill.version)
+          let header =
+            types.skill_name_value(skill.name)
+            <> " v"
+            <> semver.to_string(skill.version)
           let instructions_warning = case
             simplifile.is_file(skill_dir <> "/INSTRUCTIONS.md")
           {
@@ -412,7 +431,7 @@ fn format_warnings(warnings: List(types.CompileWarning)) -> String {
             <> " contains YAML frontmatter which will be included as-is in the output"
           types.MissingDependency(dep) ->
             "Warning: missing dependency '"
-            <> dep.name
+            <> types.dependency_name_value(dep.name)
             <> "' ("
             <> version_constraint.to_string(dep.version)
             <> ")"

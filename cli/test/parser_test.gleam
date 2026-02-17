@@ -17,8 +17,11 @@ pub fn parse_valid_skill_yaml_test() {
   let content = read_fixture("valid-skill/skill.yaml")
   let result = parser.parse_skill_yaml(content)
   let assert Ok(skill) = result
-  should.equal(skill.name, "test-skill")
-  should.equal(skill.description, "A test skill for validation")
+  should.equal(types.skill_name_value(skill.name), "test-skill")
+  should.equal(
+    types.skill_description_value(skill.description),
+    "A test skill for validation",
+  )
   should.equal(semver.to_string(skill.version), "1.2.3")
   should.equal(skill.license, Some("MIT"))
   should.equal(skill.homepage, Some("https://example.com/test-skill"))
@@ -39,14 +42,14 @@ pub fn parse_valid_skill_yaml_dependencies_test() {
   let assert Ok(skill) = parser.parse_skill_yaml(content)
   should.equal(skill.dependencies, [
     types.Dependency(
-      name: "helper-skill",
+      name: must_dependency_name("helper-skill"),
       version: assert_parse_vc("^1.0.0"),
-      optional: False,
+      requirement: types.RequiredDependency,
     ),
     types.Dependency(
-      name: "extra-skill",
+      name: must_dependency_name("extra-skill"),
       version: assert_parse_vc("~2.1.0"),
-      optional: True,
+      requirement: types.OptionalDependency,
     ),
   ])
 }
@@ -56,14 +59,14 @@ pub fn parse_valid_skill_yaml_config_test() {
   let assert Ok(skill) = parser.parse_skill_yaml(content)
   should.equal(skill.config, [
     types.ConfigField(
-      name: "api_key",
-      description: "API key for authentication",
+      name: must_config_field_name("api_key"),
+      description: types.config_field_description("API key for authentication"),
       requirement: types.Required,
       secret: True,
     ),
     types.ConfigField(
-      name: "timeout",
-      description: "Request timeout in seconds",
+      name: must_config_field_name("timeout"),
+      description: types.config_field_description("Request timeout in seconds"),
       requirement: types.OptionalWithDefault("30"),
       secret: False,
     ),
@@ -73,8 +76,11 @@ pub fn parse_valid_skill_yaml_config_test() {
 pub fn parse_minimal_skill_yaml_test() {
   let content = read_fixture("minimal-skill/skill.yaml")
   let assert Ok(skill) = parser.parse_skill_yaml(content)
-  should.equal(skill.name, "minimal")
-  should.equal(skill.description, "A minimal skill")
+  should.equal(types.skill_name_value(skill.name), "minimal")
+  should.equal(
+    types.skill_description_value(skill.description),
+    "A minimal skill",
+  )
   should.equal(semver.to_string(skill.version), "0.1.0")
   should.equal(skill.license, None)
   should.equal(skill.homepage, None)
@@ -250,14 +256,14 @@ dependencies:
   let assert Ok(skill) = parser.parse_skill_yaml(yaml)
   should.equal(skill.dependencies, [
     types.Dependency(
-      name: "my-dep",
+      name: must_dependency_name("my-dep"),
       version: assert_parse_vc("^1.0.0"),
-      optional: False,
+      requirement: types.RequiredDependency,
     ),
     types.Dependency(
-      name: "optional-dep",
+      name: must_dependency_name("optional-dep"),
       version: assert_parse_vc("~2.0.0"),
-      optional: True,
+      requirement: types.OptionalDependency,
     ),
   ])
 }
@@ -298,9 +304,9 @@ dependencies:
   // The entry without a name should be silently skipped
   should.equal(skill.dependencies, [
     types.Dependency(
-      name: "valid-dep",
+      name: must_dependency_name("valid-dep"),
       version: assert_parse_vc("~2.0.0"),
-      optional: False,
+      requirement: types.RequiredDependency,
     ),
   ])
 }
@@ -337,8 +343,8 @@ config:
   // Entry without name should be skipped
   should.equal(skill.config, [
     types.ConfigField(
-      name: "valid_field",
-      description: "has a name",
+      name: must_config_field_name("valid_field"),
+      description: types.config_field_description("has a name"),
       requirement: types.Optional,
       secret: False,
     ),
@@ -362,10 +368,10 @@ config:
 "
   let assert Ok(skill) = parser.parse_skill_yaml(yaml)
   let assert [first, second] = skill.config
-  should.equal(first.name, "api_key")
+  should.equal(types.config_field_name_value(first.name), "api_key")
   should.equal(first.requirement, types.Required)
   should.equal(first.secret, True)
-  should.equal(second.name, "cache_ttl")
+  should.equal(types.config_field_name_value(second.name), "cache_ttl")
   should.equal(second.requirement, types.OptionalWithDefault("300"))
   should.equal(second.secret, False)
 }
@@ -625,4 +631,14 @@ fn read_fixture(path: String) -> String {
 fn assert_parse_vc(input: String) -> version_constraint.VersionConstraint {
   let assert Ok(vc) = version_constraint.parse(input)
   vc
+}
+
+fn must_dependency_name(raw: String) -> types.DependencyName {
+  let assert Ok(name) = types.parse_dependency_name(raw)
+  name
+}
+
+fn must_config_field_name(raw: String) -> types.ConfigFieldName {
+  let assert Ok(name) = types.parse_config_field_name(raw)
+  name
 }

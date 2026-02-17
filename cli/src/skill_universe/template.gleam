@@ -784,9 +784,9 @@ pub fn build_context(
   provider_meta: yay.Node,
 ) -> Value {
   let base_props = [
-    #("name", VStr(skill.name)),
+    #("name", VStr(types.skill_name_value(skill.name))),
     #("version", VStr(semver.to_string(skill.version))),
-    #("description", VStr(skill.description)),
+    #("description", VStr(types.skill_description_value(skill.description))),
     #("provider", VStr(types.provider_to_string(target))),
   ]
 
@@ -808,9 +808,12 @@ pub fn build_context(
   let dep_values =
     list.map(skill.dependencies, fn(dep) {
       VDict([
-        #("name", VStr(dep.name)),
+        #("name", VStr(types.dependency_name_value(dep.name))),
         #("version", VStr(version_constraint.to_string(dep.version))),
-        #("optional", VBool(dep.optional)),
+        #(
+          "optional",
+          VBool(types.dependency_requirement_is_optional(dep.requirement)),
+        ),
       ])
     })
 
@@ -844,8 +847,11 @@ pub fn build_context(
       VDict(
         list.flatten([
           [
-            #("name", VStr(cf.name)),
-            #("description", VStr(cf.description)),
+            #("name", VStr(types.config_field_name_value(cf.name))),
+            #(
+              "description",
+              VStr(types.config_field_description_value(cf.description)),
+            ),
             #("required", VBool(required_val)),
             #("secret", VBool(cf.secret)),
           ],
