@@ -6,6 +6,12 @@ import gleam/string
 import simplifile
 import skill_universe/error.{type SkillError, ImportError, map_file_error}
 import skill_universe/fs
+import skill_universe/import_source.{
+  type RemoteHost, type RemoteLocator, GitHub, GitLab, LocalDirectory, LocalFile,
+  RemoteFileFallback, RemoteRepo, git_ref_value, host_to_string, locator_ref,
+  locator_repo, locator_target_subpath, repo_id_value, repo_subpath_value,
+  resolve,
+}
 import skill_universe/path
 import skill_universe/platform
 import skill_universe/semver.{type SemVer}
@@ -62,6 +68,107 @@ pub type ImportResult {
   )
 }
 
+// Internal wrappers to avoid mixing unrelated string primitives.
+type DirectoryPath {
+  DirectoryPath(raw: String)
+}
+
+type FilePath {
+  FilePath(raw: String)
+}
+
+type HttpUrl {
+  HttpUrl(raw: String)
+}
+
+type ErrorSource {
+  ErrorSource(raw: String)
+}
+
+fn directory_path(raw: String) -> DirectoryPath {
+  DirectoryPath(raw: raw)
+}
+
+fn file_path(raw: String) -> FilePath {
+  FilePath(raw: raw)
+}
+
+fn http_url(raw: String) -> HttpUrl {
+  HttpUrl(raw: raw)
+}
+
+fn error_source(raw: String) -> ErrorSource {
+  ErrorSource(raw: raw)
+}
+
+fn directory_raw(path: DirectoryPath) -> String {
+  path.raw
+}
+
+fn file_raw(path: FilePath) -> String {
+  path.raw
+}
+
+fn url_raw(url: HttpUrl) -> String {
+  url.raw
+}
+
+fn error_source_raw(source: ErrorSource) -> String {
+  source.raw
+}
+
+fn directory_join_file(dir: DirectoryPath, filename: String) -> FilePath {
+  file_path(directory_raw(dir) <> "/" <> filename)
+}
+
+fn directory_join_dir(dir: DirectoryPath, child: String) -> DirectoryPath {
+  directory_path(directory_raw(dir) <> "/" <> child)
+}
+
+fn skill_md_filename() -> String {
+  "SKILL.md"
+}
+
+fn skill_yaml_filename() -> String {
+  "skill.yaml"
+}
+
+fn instructions_filename() -> String {
+  "INSTRUCTIONS.md"
+}
+
+fn metadata_filename() -> String {
+  "metadata.yaml"
+}
+
+fn openai_yaml_relative_path() -> String {
+  "agents/openai.yaml"
+}
+
+fn archive_filename() -> String {
+  "archive.tar.gz"
+}
+
+fn extract_directory_name() -> String {
+  "extract"
+}
+
+fn import_tmp_prefix() -> String {
+  "skill-universe-import-"
+}
+
+fn providers_directory_name() -> String {
+  "providers"
+}
+
+fn scripts_directory_name() -> String {
+  "scripts"
+}
+
+fn assets_directory_name() -> String {
+  "assets"
+}
+
 // ============================================================================
 // Main orchestrator
 // ============================================================================
@@ -78,7 +185,7 @@ pub fn import_skill(
   // Read SKILL.md
   let skill_md_path = case resolved {
     SourceFile(path:, ..) -> path
-    SourceDirectory(path:) -> path <> "/SKILL.md"
+    SourceDirectory(path:) -> path <> "/" <> skill_md_filename()
   }
   use content <- result.try(
     simplifile.read(skill_md_path)
@@ -98,7 +205,7 @@ pub fn import_skill(
   // Read codex yaml before separation (keeps generate_metadata_yaml pure)
   let codex_yaml = case provider {
     Codex ->
-      case simplifile.read(source_dir <> "/agents/openai.yaml") {
+      case simplifile.read(source_dir <> "/" <> openai_yaml_relative_path()) {
         Ok(content) -> Some(content)
         Error(_) -> None
       }
@@ -297,7 +404,9 @@ pub fn detect_provider(
         True -> Ok(ClaudeCode)
         False -> {
           // 3. Codex: agents/openai.yaml exists in source dir
-          case simplifile.is_file(source_dir <> "/agents/openai.yaml") {
+          case
+            simplifile.is_file(source_dir <> "/" <> openai_yaml_relative_path())
+          {
             Ok(True) -> Ok(Codex)
             _ ->
               Error(ImportError(
@@ -560,41 +669,236 @@ fn indent_block(block: String, spaces: Int) -> String {
 // Source resolution
 // ============================================================================
 
-/// Resolve source: download URL to temp dir, or classify local path as
-/// file or directory.
+/// Resolve source: local path, typed GitHub/GitLab remote source, or
+/// generic remote file fallback.
 pub fn fetch_source(source: String) -> Result(ResolvedSource, SkillError) {
-  case
-    string.starts_with(source, "http://")
-    || string.starts_with(source, "https://")
-  {
-    True -> fetch_remote(source)
-    False -> resolve_local(source)
+  let source_context = error_source(source)
+  use parsed <- result.try(resolve(source))
+  case parsed {
+    LocalDirectory(path:) -> Ok(SourceDirectory(path))
+    LocalFile(path:) ->
+      Ok(SourceFile(path: path, directory: path.parent_dir(path)))
+    RemoteRepo(host:, locator:) ->
+      fetch_remote_repo(source_context, host, locator)
+    RemoteFileFallback(url:) -> fetch_remote_file(http_url(url))
   }
 }
 
-fn fetch_remote(url: String) -> Result(ResolvedSource, SkillError) {
-  let tmp_dir =
-    platform.tmpdir() <> "/skill-universe-import-" <> hash_string(url)
-  case simplifile.create_directory_all(tmp_dir) {
-    Error(_) -> Error(ImportError(url, "Failed to create temp directory"))
-    Ok(_) -> {
-      let cmd =
-        "curl -sSfL -o "
-        <> shell.quote(tmp_dir <> "/SKILL.md")
-        <> " "
-        <> shell.quote(url)
-      case shell.exec(cmd) {
-        Ok(_) -> Ok(SourceDirectory(tmp_dir))
-        Error(msg) -> Error(ImportError(url, "Failed to download: " <> msg))
+fn fetch_remote_file(url: HttpUrl) -> Result(ResolvedSource, SkillError) {
+  let source = error_source(url_raw(url))
+  let tmp_dir = import_tmp_dir(url_raw(url))
+  use _ <- result.try(recreate_directory(tmp_dir, source))
+
+  let destination = directory_join_file(tmp_dir, skill_md_filename())
+  let cmd =
+    "curl -sSfL -o "
+    <> shell.quote(file_raw(destination))
+    <> " "
+    <> shell.quote(url_raw(url))
+  case shell.exec(cmd) {
+    Ok(_) -> Ok(SourceDirectory(directory_raw(tmp_dir)))
+    Error(msg) ->
+      Error(ImportError(error_source_raw(source), "Failed to download: " <> msg))
+  }
+}
+
+fn fetch_remote_repo(
+  source: ErrorSource,
+  host: RemoteHost,
+  locator: RemoteLocator,
+) -> Result(ResolvedSource, SkillError) {
+  let repo_id = repo_id_value(locator_repo(locator))
+  let ref = case locator_ref(locator) {
+    Some(value) -> git_ref_value(value)
+    None -> "HEAD"
+  }
+  let archive_url = build_archive_url(host, repo_id, ref)
+  let tmp_key =
+    host_to_string(host)
+    <> ":"
+    <> repo_id
+    <> ":"
+    <> ref
+    <> ":"
+    <> error_source_raw(source)
+  let tmp_dir = import_tmp_dir(tmp_key)
+  let archive_path = directory_join_file(tmp_dir, archive_filename())
+  let extract_dir = directory_join_dir(tmp_dir, extract_directory_name())
+
+  use _ <- result.try(recreate_directory(tmp_dir, source))
+  use _ <- result.try(
+    simplifile.create_directory_all(directory_raw(extract_dir))
+    |> map_file_error(directory_raw(extract_dir)),
+  )
+  use _ <- result.try(download_to_file(archive_url, archive_path, source))
+  use _ <- result.try(extract_archive(archive_path, extract_dir, source))
+  use root_dir <- result.try(find_archive_root(extract_dir, source))
+  use target_dir <- result.try(resolve_locator_directory(
+    root_dir,
+    locator,
+    source,
+  ))
+  use _ <- result.try(require_skill_md(target_dir, source))
+
+  Ok(SourceDirectory(directory_raw(target_dir)))
+}
+
+fn build_archive_url(host: RemoteHost, repo_id: String, ref: String) -> HttpUrl {
+  case host {
+    GitHub ->
+      http_url("https://codeload.github.com/" <> repo_id <> "/tar.gz/" <> ref)
+    GitLab ->
+      http_url(
+        "https://gitlab.com/"
+        <> repo_id
+        <> "/-/archive/"
+        <> ref
+        <> "/"
+        <> path.basename(repo_id)
+        <> "-"
+        <> ref
+        <> ".tar.gz",
+      )
+  }
+}
+
+fn import_tmp_dir(key: String) -> DirectoryPath {
+  directory_path(
+    platform.tmpdir() <> "/" <> import_tmp_prefix() <> hash_string(key),
+  )
+}
+
+fn recreate_directory(
+  dir: DirectoryPath,
+  source: ErrorSource,
+) -> Result(Nil, SkillError) {
+  let _ = simplifile.delete(directory_raw(dir))
+  simplifile.create_directory_all(directory_raw(dir))
+  |> result.map_error(fn(_) {
+    ImportError(
+      error_source_raw(source),
+      "Failed to create temp directory: " <> directory_raw(dir),
+    )
+  })
+}
+
+fn download_to_file(
+  url: HttpUrl,
+  destination: FilePath,
+  source: ErrorSource,
+) -> Result(Nil, SkillError) {
+  let cmd =
+    "curl -sSfL -o "
+    <> shell.quote(file_raw(destination))
+    <> " "
+    <> shell.quote(url_raw(url))
+  case shell.exec(cmd) {
+    Ok(_) -> Ok(Nil)
+    Error(msg) ->
+      Error(ImportError(
+        error_source_raw(source),
+        "Failed to download archive from " <> url_raw(url) <> ": " <> msg,
+      ))
+  }
+}
+
+fn extract_archive(
+  archive_path: FilePath,
+  extract_dir: DirectoryPath,
+  source: ErrorSource,
+) -> Result(Nil, SkillError) {
+  let cmd =
+    "tar xzf "
+    <> shell.quote(file_raw(archive_path))
+    <> " -C "
+    <> shell.quote(directory_raw(extract_dir))
+  case shell.exec(cmd) {
+    Ok(_) -> Ok(Nil)
+    Error(msg) ->
+      Error(ImportError(
+        error_source_raw(source),
+        "Failed to extract archive: " <> msg,
+      ))
+  }
+}
+
+fn find_archive_root(
+  extract_dir: DirectoryPath,
+  source: ErrorSource,
+) -> Result(DirectoryPath, SkillError) {
+  case simplifile.read_directory(directory_raw(extract_dir)) {
+    Error(_) ->
+      Error(ImportError(
+        error_source_raw(source),
+        "Failed to inspect extracted archive",
+      ))
+    Ok(entries) -> {
+      let directories =
+        list.filter(entries, fn(entry) {
+          case
+            simplifile.is_directory(
+              directory_raw(directory_join_dir(extract_dir, entry)),
+            )
+          {
+            Ok(True) -> True
+            _ -> False
+          }
+        })
+      case directories {
+        [entry] -> Ok(directory_join_dir(extract_dir, entry))
+        [] ->
+          Error(ImportError(
+            error_source_raw(source),
+            "Downloaded archive was empty",
+          ))
+        _ ->
+          Error(ImportError(
+            error_source_raw(source),
+            "Downloaded archive had an unexpected layout",
+          ))
       }
     }
   }
 }
 
-fn resolve_local(source: String) -> Result(ResolvedSource, SkillError) {
-  case simplifile.is_file(source) {
-    Ok(True) -> Ok(SourceFile(path: source, directory: path.parent_dir(source)))
-    _ -> Ok(SourceDirectory(source))
+fn resolve_locator_directory(
+  root_dir: DirectoryPath,
+  locator: RemoteLocator,
+  source: ErrorSource,
+) -> Result(DirectoryPath, SkillError) {
+  case locator_target_subpath(locator) {
+    None -> Ok(root_dir)
+    Some(subpath) -> {
+      let relative = repo_subpath_value(subpath)
+      let target_dir = directory_join_dir(root_dir, relative)
+      case simplifile.is_directory(directory_raw(target_dir)) {
+        Ok(True) -> Ok(target_dir)
+        _ ->
+          Error(ImportError(
+            error_source_raw(source),
+            "Path '"
+              <> relative
+              <> "' was not found in the remote repository archive",
+          ))
+      }
+    }
+  }
+}
+
+fn require_skill_md(
+  target_dir: DirectoryPath,
+  source: ErrorSource,
+) -> Result(Nil, SkillError) {
+  let skill_md = directory_join_file(target_dir, skill_md_filename())
+  case simplifile.is_file(file_raw(skill_md)) {
+    Ok(True) -> Ok(Nil)
+    _ ->
+      Error(ImportError(
+        error_source_raw(source),
+        skill_md_filename()
+          <> " not found in resolved source directory: "
+          <> directory_raw(target_dir),
+      ))
   }
 }
 
@@ -615,9 +919,13 @@ pub fn emit_imported(
   import_result: ImportResult,
   output_dir: String,
 ) -> Result(Nil, SkillError) {
-  case simplifile.is_file(output_dir <> "/skill.yaml") {
+  let skill_yaml_path = output_dir <> "/" <> skill_yaml_filename()
+  case simplifile.is_file(skill_yaml_path) {
     Ok(True) ->
-      Error(ImportError("emit", "skill.yaml already exists in " <> output_dir))
+      Error(ImportError(
+        "emit",
+        skill_yaml_filename() <> " already exists in " <> output_dir,
+      ))
     _ -> do_emit_imported(import_result, output_dir)
   }
 }
@@ -627,37 +935,36 @@ fn do_emit_imported(
   output_dir: String,
 ) -> Result(Nil, SkillError) {
   let provider_str = types.provider_to_string(import_result.provider)
-  let provider_dir = output_dir <> "/providers/" <> provider_str
+  let provider_dir =
+    output_dir <> "/" <> providers_directory_name() <> "/" <> provider_str
 
   use _ <- result.try(
     simplifile.create_directory_all(provider_dir)
     |> map_file_error(provider_dir),
   )
+  let skill_yaml_path = output_dir <> "/" <> skill_yaml_filename()
+  let instructions_path = output_dir <> "/" <> instructions_filename()
+  let metadata_path = provider_dir <> "/" <> metadata_filename()
+
   use _ <- result.try(
-    simplifile.write(output_dir <> "/skill.yaml", import_result.skill_yaml)
-    |> map_file_error(output_dir <> "/skill.yaml"),
+    simplifile.write(skill_yaml_path, import_result.skill_yaml)
+    |> map_file_error(skill_yaml_path),
   )
   use _ <- result.try(
-    simplifile.write(
-      output_dir <> "/INSTRUCTIONS.md",
-      import_result.instructions_md,
-    )
-    |> map_file_error(output_dir <> "/INSTRUCTIONS.md"),
+    simplifile.write(instructions_path, import_result.instructions_md)
+    |> map_file_error(instructions_path),
   )
   use _ <- result.try(
-    simplifile.write(
-      provider_dir <> "/metadata.yaml",
-      import_result.metadata_yaml,
-    )
-    |> map_file_error(provider_dir <> "/metadata.yaml"),
+    simplifile.write(metadata_path, import_result.metadata_yaml)
+    |> map_file_error(metadata_path),
   )
   use _ <- result.try(fs.copy_file_list(
     import_result.scripts,
-    provider_dir <> "/scripts",
+    provider_dir <> "/" <> scripts_directory_name(),
   ))
   use _ <- result.try(fs.copy_file_list(
     import_result.assets,
-    provider_dir <> "/assets",
+    provider_dir <> "/" <> assets_directory_name(),
   ))
 
   Ok(Nil)

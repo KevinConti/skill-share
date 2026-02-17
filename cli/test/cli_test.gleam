@@ -25,6 +25,13 @@ pub fn cli_help_test() {
   should.be_true(string.contains(output, "init"))
 }
 
+pub fn cli_help_includes_remote_import_sources_test() {
+  let assert Ok(output) = skill_universe.run(["help"])
+  should.be_true(string.contains(output, "owner/repo[/path][@ref]"))
+  should.be_true(string.contains(output, "gitlab:group/project[@ref]"))
+  should.be_true(string.contains(output, "<github|gitlab-url>"))
+}
+
 pub fn cli_help_flag_test() {
   let assert Ok(output) = skill_universe.run(["--help"])
   should.be_true(string.contains(output, "Usage:"))

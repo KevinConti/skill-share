@@ -5,6 +5,9 @@ import gleeunit/should
 import simplifile
 import skill_universe/compiler
 import skill_universe/error
+import skill_universe/import_source.{
+  RemoteRepo, locator_target_subpath, repo_subpath_value, resolve,
+}
 import skill_universe/importer.{FrontmatterPair, SourceDirectory}
 import skill_universe/semver
 import skill_universe/types
@@ -274,6 +277,34 @@ pub fn fetch_source_invalid_url_returns_error_test() {
   should.be_error(result)
   let assert Error(error.ImportError(_, msg)) = result
   should.be_true(string.contains(msg, "Failed to download"))
+}
+
+pub fn blob_source_targets_parent_directory_test() {
+  let assert Ok(parsed) =
+    resolve(
+      "https://github.com/octocat/hello-world/blob/main/skills/demo/SKILL.md",
+    )
+  case parsed {
+    RemoteRepo(locator:, ..) -> {
+      let assert Some(path) = locator_target_subpath(locator)
+      should.equal(repo_subpath_value(path), "skills/demo")
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn raw_source_targets_parent_directory_test() {
+  let assert Ok(parsed) =
+    resolve(
+      "https://raw.githubusercontent.com/octocat/hello-world/main/skills/demo/SKILL.md",
+    )
+  case parsed {
+    RemoteRepo(locator:, ..) -> {
+      let assert Some(path) = locator_target_subpath(locator)
+      should.equal(repo_subpath_value(path), "skills/demo")
+    }
+    _ -> should.fail()
+  }
 }
 
 // ============================================================================

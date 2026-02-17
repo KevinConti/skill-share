@@ -69,6 +69,9 @@ npx skill-universe init <skill-dir>                             Create a new ski
 npx skill-universe import <source>                              Import a provider-specific skill
 npx skill-universe import <source> --provider <provider>        Import with explicit provider
 npx skill-universe import <source> --output <dir>               Import to custom output dir
+npx skill-universe import owner/repo[/path][@ref]               Import from GitHub shorthand
+npx skill-universe import gitlab:group/project[@ref]            Import from GitLab shorthand
+npx skill-universe import <github|gitlab-url>                   Import from GitHub/GitLab URL
 npx skill-universe publish <skill-dir>                          Publish to GitHub Releases
 npx skill-universe publish <skill-dir> --repo <owner/repo>     Publish to specific repo
 npx skill-universe search <query>                               Search for skills
@@ -79,6 +82,25 @@ npx skill-universe list --installed                             List installed s
 npx skill-universe version                                      Show version
 npx skill-universe help                                         Show help
 ```
+
+### Import Sources
+
+`import <source>` supports local paths and these remote forms:
+
+- `owner/repo`
+- `owner/repo/path/to/skill`
+- `owner/repo@ref`
+- `owner/repo/path/to/skill@ref`
+- `gitlab:group/project`
+- `gitlab:group/project@ref`
+- `https://github.com/<owner>/<repo>`
+- `https://github.com/<owner>/<repo>/tree/<ref>/<path>`
+- `https://github.com/<owner>/<repo>/blob/<ref>/<path>`
+- `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`
+- `https://gitlab.com/<group>/<project>`
+- `https://gitlab.com/<group>/<project>/-/tree/<ref>/<path>`
+- `https://gitlab.com/<group>/<project>/-/blob/<ref>/<path>`
+- `https://gitlab.com/<group>/<project>/-/raw/<ref>/<path>`
 
 ## Documentation
 

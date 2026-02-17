@@ -436,6 +436,9 @@ Usage:
   skill-universe import <source>                              Import a provider-specific skill
   skill-universe import <source> --provider <provider>        Import with explicit provider
   skill-universe import <source> --output <dir>               Import to custom output dir
+  skill-universe import owner/repo[/path][@ref]               Import from GitHub shorthand
+  skill-universe import gitlab:group/project[@ref]            Import from GitLab shorthand
+  skill-universe import <github|gitlab-url>                   Import from GitHub/GitLab URL
   skill-universe config init <skill-dir>                      Generate .env template
   skill-universe config check <skill-dir>                     Check config env vars
   skill-universe publish <skill-dir>                          Publish to GitHub Releases
