@@ -224,19 +224,15 @@ pub fn install(
   )
 
   // 3. Resolve the tag to download
-  use tag_flag <- result.try(resolve_install_tag(repo, skill_name, version))
+  use tag <- result.try(resolve_install_tag(repo, skill_name, version))
 
   // 4. Download release tarball
   use _ <- result.try(
-    shell.exec(
-      "gh release download"
-      <> tag_flag
-      <> " --repo "
-      <> shell_quote(repo)
-      <> " --pattern '*.tar.gz'"
-      <> " --dir "
-      <> shell_quote(temp_directory_raw(tmp_dir)),
-    )
+    shell.exec(build_release_download_command(
+      repo,
+      tag,
+      temp_directory_raw(tmp_dir),
+    ))
     |> result.map_error(fn(e) {
       RegistryError("Failed to download release: " <> e)
     }),
@@ -357,14 +353,14 @@ fn resolve_install_tag(
   repo: String,
   skill_name: Option(String),
   version: Option(String),
-) -> Result(String, SkillError) {
+) -> Result(Option(String), SkillError) {
   case skill_name, version {
     // owner/repo@v1.0.0 — backward compat, download exact tag
-    None, Some(v) -> Ok(" " <> shell_quote(v))
-    // owner/repo — backward compat, latest release
-    None, None -> Ok(" --latest")
+    None, Some(v) -> Ok(Some(v))
+    // owner/repo — backward compat, latest release (no explicit tag argument)
+    None, None -> Ok(None)
     // owner/repo/skill@v1.0.0 — download tag {skill}-{version}
-    Some(name), Some(v) -> Ok(" " <> shell_quote(name <> "-" <> v))
+    Some(name), Some(v) -> Ok(Some(name <> "-" <> v))
     // owner/repo/skill — find latest tag matching {skill}-v*
     Some(name), None -> {
       use output <- result.try(
@@ -386,7 +382,7 @@ fn resolve_install_tag(
         string.split(string.trim(output), "\n")
         |> list.filter(fn(t) { !string.is_empty(t) })
       case tags {
-        [latest, ..] -> Ok(" " <> shell_quote(latest))
+        [latest, ..] -> Ok(Some(latest))
         [] ->
           Error(RegistryError(
             "No releases found for skill '" <> name <> "' in " <> repo,
@@ -394,6 +390,23 @@ fn resolve_install_tag(
       }
     }
   }
+}
+
+pub fn build_release_download_command(
+  repo: String,
+  tag: Option(String),
+  temp_dir: String,
+) -> String {
+  "gh release download"
+  <> case tag {
+    Some(t) -> " " <> shell_quote(t)
+    None -> ""
+  }
+  <> " --repo "
+  <> shell_quote(repo)
+  <> " --pattern '*.tar.gz'"
+  <> " --dir "
+  <> shell_quote(temp_dir)
 }
 
 fn find_skill_dir(base_dir: String) -> Result(SkillDirectory, SkillError) {

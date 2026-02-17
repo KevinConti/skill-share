@@ -78,6 +78,29 @@ pub fn parse_install_spec_three_segment_with_version_test() {
   should.equal(version, Some("v1.0.0"))
 }
 
+pub fn build_release_download_command_latest_test() {
+  let cmd =
+    registry.build_release_download_command("owner/repo", None, "/tmp/install")
+
+  should.be_true(string.contains(cmd, "gh release download"))
+  should.be_false(string.contains(cmd, "--latest"))
+  should.be_true(string.contains(cmd, "--repo 'owner/repo'"))
+  should.be_true(string.contains(cmd, "--pattern '*.tar.gz'"))
+  should.be_true(string.contains(cmd, "--dir '/tmp/install'"))
+}
+
+pub fn build_release_download_command_tagged_test() {
+  let cmd =
+    registry.build_release_download_command(
+      "owner/repo",
+      Some("v1.2.3"),
+      "/tmp/install",
+    )
+
+  should.be_true(string.contains(cmd, "gh release download 'v1.2.3'"))
+  should.be_false(string.contains(cmd, "--latest"))
+}
+
 // ============================================================================
 // Shell Exec
 // ============================================================================
