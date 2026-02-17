@@ -185,10 +185,10 @@ policy:
 
 ```bash
 # Compile for all supported providers
-npx skill-universe compile my-skill
+npx skill-universe compile my-skill --output dist
 ```
 
-Output appears in `dist/`:
+Output appears in `dist/` (explicit via `--output dist`; default output root is `~/.skill-universe`):
 
 ```
 dist/
@@ -200,7 +200,7 @@ dist/
 To compile for a single provider:
 
 ```bash
-npx skill-universe compile my-skill --target claude-code
+npx skill-universe compile my-skill --target claude-code --output dist
 ```
 
 ### Verify the Output

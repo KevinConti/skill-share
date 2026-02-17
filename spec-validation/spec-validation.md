@@ -115,7 +115,7 @@ This document outlines test scenarios for validating that the CLI meets the unif
 ### 3.1 Full Compilation
 
 - Compiles for all supported providers successfully
-- Output directory structure matches spec (dist/openclaw/, dist/claude-code/, dist/codex/)
+- Output directory structure matches spec (with `--output dist`: dist/openclaw/, dist/claude-code/, dist/codex/)
 - Each provider output contains valid SKILL.md
 - Scripts directory is included when present in source
 - Assets directory is included when present in source

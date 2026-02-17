@@ -7,6 +7,7 @@ import gleam/string
 import simplifile
 import skill_universe/compiler
 import skill_universe/config
+import skill_universe/default_output
 import skill_universe/error
 import skill_universe/importer
 import skill_universe/parser
@@ -52,17 +53,33 @@ pub fn run(args: List(String)) -> Result(String, String) {
 
 fn run_compile(args: List(String)) -> Result(String, String) {
   case args {
-    [skill_dir, "--target", target] ->
-      do_compile(skill_dir, target, skill_dir <> "/dist")
+    [skill_dir, "--target", target] -> {
+      use default_dir <- result.try(
+        default_output.compile_output_dir()
+        |> map_default_output_error,
+      )
+      do_compile(skill_dir, target, default_dir)
+    }
     [skill_dir, "--target", target, "--output", output] ->
       do_compile(skill_dir, target, output)
-    [skill_dir, "--providers", providers_str] ->
-      do_compile_providers(skill_dir, providers_str, skill_dir <> "/dist")
+    [skill_dir, "--providers", providers_str] -> {
+      use default_dir <- result.try(
+        default_output.compile_output_dir()
+        |> map_default_output_error,
+      )
+      do_compile_providers(skill_dir, providers_str, default_dir)
+    }
     [skill_dir, "--providers", providers_str, "--output", output] ->
       do_compile_providers(skill_dir, providers_str, output)
     [skill_dir, "--output", output, "--providers", providers_str] ->
       do_compile_providers(skill_dir, providers_str, output)
-    [skill_dir] -> do_compile_all(skill_dir, skill_dir <> "/dist")
+    [skill_dir] -> {
+      use default_dir <- result.try(
+        default_output.compile_output_dir()
+        |> map_default_output_error,
+      )
+      do_compile_all(skill_dir, default_dir)
+    }
     [skill_dir, "--output", output] -> do_compile_all(skill_dir, output)
     _ -> Error(usage_text())
   }
@@ -90,9 +107,21 @@ fn run_install(args: List(String)) -> Result(String, String) {
       do_install(spec, Some(target), dir)
     [spec, "--output", dir, "--target", target] ->
       do_install(spec, Some(target), dir)
-    [spec, "--target", target] -> do_install(spec, Some(target), "./skills")
+    [spec, "--target", target] -> {
+      use default_dir <- result.try(
+        default_output.install_output_dir()
+        |> map_default_output_error,
+      )
+      do_install(spec, Some(target), default_dir)
+    }
     [spec, "--output", dir] -> do_install(spec, None, dir)
-    [spec] -> do_install(spec, None, "./skills")
+    [spec] -> {
+      use default_dir <- result.try(
+        default_output.install_output_dir()
+        |> map_default_output_error,
+      )
+      do_install(spec, None, default_dir)
+    }
     _ -> Error(usage_text())
   }
 }
@@ -100,7 +129,13 @@ fn run_install(args: List(String)) -> Result(String, String) {
 fn run_list(args: List(String)) -> Result(String, String) {
   case args {
     ["--installed", "--output", dir] -> do_list_installed(dir)
-    ["--installed"] -> do_list_installed("./skills")
+    ["--installed"] -> {
+      use default_dir <- result.try(
+        default_output.list_output_dir()
+        |> map_default_output_error,
+      )
+      do_list_installed(default_dir)
+    }
     [spec] -> {
       // Parse spec to extract optional skill name: "owner/repo" or "owner/repo/skill-name"
       let segments = string.split(spec, "/")
@@ -116,8 +151,20 @@ fn run_list(args: List(String)) -> Result(String, String) {
 
 fn run_import(args: List(String)) -> Result(String, String) {
   case args {
-    [source] -> do_import(source, None, "./")
-    [source, "--provider", p] -> do_import(source, Some(p), "./")
+    [source] -> {
+      use default_dir <- result.try(
+        default_output.import_output_dir(source)
+        |> map_default_output_error,
+      )
+      do_import(source, None, default_dir)
+    }
+    [source, "--provider", p] -> {
+      use default_dir <- result.try(
+        default_output.import_output_dir(source)
+        |> map_default_output_error,
+      )
+      do_import(source, Some(p), default_dir)
+    }
     [source, "--output", dir] -> do_import(source, None, dir)
     [source, "--provider", p, "--output", dir] ->
       do_import(source, Some(p), dir)
@@ -472,6 +519,11 @@ Usage:
   skill-universe version                                      Show version
   skill-universe help                                         Show this help
 
+Default output root (when --output is omitted):
+  Unix/macOS: ~/.skill-universe
+  Windows: %USERPROFILE%\\.skill-universe
+  import defaults to <root>/imports/<derived-name>
+
 Install spec formats:
   owner/repo                    Latest release from repo
   owner/repo@v1.0.0            Specific version from repo
@@ -479,6 +531,15 @@ Install spec formats:
   owner/repo/skill-name@v1.0.0  Specific version of skill from multi-skill repo
 
 Providers: openclaw, claude-code, codex"
+}
+
+fn map_default_output_error(
+  output: Result(a, default_output.DefaultOutputError),
+) -> Result(a, String) {
+  output
+  |> result.map_error(fn(err) {
+    "Error: " <> default_output.error_to_message(err)
+  })
 }
 
 @external(erlang, "erlang", "halt")

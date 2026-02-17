@@ -23,6 +23,7 @@ pub fn cli_help_test() {
   should.be_true(string.contains(output, "compile"))
   should.be_true(string.contains(output, "check"))
   should.be_true(string.contains(output, "init"))
+  should.be_true(string.contains(output, ".skill-universe"))
 }
 
 pub fn cli_help_includes_remote_import_sources_test() {

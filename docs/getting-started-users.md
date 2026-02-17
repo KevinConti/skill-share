@@ -56,13 +56,13 @@ If you have a skill source directory (e.g., you cloned a repo or are testing a s
 
 ```bash
 # Compile for all supported providers
-npx skill-universe compile /path/to/skill-dir
+npx skill-universe compile /path/to/skill-dir --output dist
 
 # Or compile for just your agent
-npx skill-universe compile /path/to/skill-dir --target claude-code
+npx skill-universe compile /path/to/skill-dir --target claude-code --output dist
 ```
 
-Then copy the compiled output from `dist/` to your agent's skills directory (see [Where Skills Live](#where-skills-live) below).
+Then copy the compiled output from `dist/` to your agent's skills directory (see [Where Skills Live](#where-skills-live) below). If you omit `--output`, the CLI writes to `~/.skill-universe` (or `%USERPROFILE%\.skill-universe` on Windows).
 
 ## Where Skills Live
 
@@ -74,7 +74,7 @@ Each agent looks for skills in a specific location:
 | **OpenClaw** | `~/development/openclaw/skills/` |
 | **Codex** | `.agents/skills/` in your repo or home directory |
 
-When you use `npx skill-universe install`, skills are placed in the correct directory automatically. For manual installation, copy the contents of `dist/<provider>/` to the appropriate location.
+When you use `npx skill-universe install`, default compiled output is managed under `~/.skill-universe` (or `%USERPROFILE%\.skill-universe` on Windows) unless you pass `--output`. For manual installation, copy the contents of `dist/<provider>/` (if you compiled with `--output dist`) to the appropriate location.
 
 ## Using Installed Skills
 

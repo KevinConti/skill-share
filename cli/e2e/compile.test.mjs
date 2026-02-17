@@ -3,7 +3,7 @@ import { strictEqual, ok } from "node:assert";
 import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { run } from "./helpers/cli.mjs";
+import { run, runWithEnv } from "./helpers/cli.mjs";
 import { createTempDir, removeTempDir, readFile, fileExists, listDir } from "./helpers/fs.mjs";
 import { parseSkillMd } from "./helpers/parse.mjs";
 import { assertMatchesGolden } from "./helpers/golden.mjs";
@@ -400,15 +400,23 @@ describe("compile", () => {
       }
     });
 
-    it("default output goes to skill-dir/dist/", () => {
+    it("default output goes to ~/.skill-universe (or USERPROFILE/.skill-universe)", () => {
       const tmp = createTempDir();
       const skillDir = `${tmp}/my-skill`;
+      const homeDir = `${tmp}/home`;
       // Copy basic fixture to tmp
       execSync(`cp -r ${fixture("basic")} ${skillDir}`);
+      execSync(`mkdir -p ${homeDir}`);
       try {
-        const result = run("compile", skillDir, "--target", "openclaw");
+        const result = runWithEnv(
+          { HOME: homeDir, USERPROFILE: homeDir },
+          "compile",
+          skillDir,
+          "--target",
+          "openclaw"
+        );
         strictEqual(result.exitCode, 0);
-        ok(fileExists(`${skillDir}/dist/openclaw/basic-skill/SKILL.md`));
+        ok(fileExists(`${homeDir}/.skill-universe/openclaw/basic-skill/SKILL.md`));
       } finally {
         removeTempDir(tmp);
       }

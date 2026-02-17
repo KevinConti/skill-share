@@ -57,6 +57,8 @@ npx skill-universe compile my-skill
 npx skill-universe compile my-skill --target claude-code
 ```
 
+By default, output is written to `~/.skill-universe` (or `%USERPROFILE%\.skill-universe` on Windows). Use `--output <dir>` to override.
+
 ## CLI
 
 ```
@@ -82,6 +84,11 @@ npx skill-universe list --installed                             List installed s
 npx skill-universe version                                      Show version
 npx skill-universe help                                         Show help
 ```
+
+Default output root when `--output` is omitted:
+- Unix/macOS: `~/.skill-universe`
+- Windows: `%USERPROFILE%\.skill-universe`
+- `import` writes to `<root>/imports/<derived-name>`
 
 ### Import Sources
 

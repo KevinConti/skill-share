@@ -118,13 +118,13 @@ For provider-specific scripts, add them to `providers/X/scripts/`. They override
 
 ```bash
 # Compile for all providers
-npx skill-universe compile my-skill
+npx skill-universe compile my-skill --output dist
 
 # Compile for a specific provider
-npx skill-universe compile my-skill --target claude-code
+npx skill-universe compile my-skill --target claude-code --output dist
 ```
 
-Output appears in `dist/`:
+Output appears in `dist/` (explicit via `--output dist`; default output root is `~/.skill-universe`):
 
 ```
 dist/

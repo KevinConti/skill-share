@@ -10,10 +10,17 @@ const CLI_PATH = resolve(__dirname, "../../bin/skill_universe.mjs");
  * Returns { stdout, stderr, exitCode } — never throws.
  */
 export function run(...args) {
+  return runWithEnv({}, ...args);
+}
+
+/**
+ * Run the CLI with additional environment variable overrides.
+ */
+export function runWithEnv(extraEnv, ...args) {
   try {
     const stdout = execFileSync("node", [CLI_PATH, ...args], {
       encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1" },
+      env: { ...process.env, ...extraEnv, NO_COLOR: "1" },
       timeout: 30_000,
     });
     return { stdout: stdout.trimEnd(), stderr: "", exitCode: 0 };

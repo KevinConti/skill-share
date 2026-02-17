@@ -398,16 +398,18 @@ Example: if `skill.yaml` has `description: "General description"` and `providers
 
 ```bash
 # Compile for all supported providers
-npx skill-universe compile skill-name
+npx skill-universe compile skill-name --output dist
 
 # Compile for specific providers
-npx skill-universe compile skill-name --providers openclaw,claude-code
+npx skill-universe compile skill-name --providers openclaw,claude-code --output dist
 
 # Compile for a single provider
-npx skill-universe compile skill-name --target codex
+npx skill-universe compile skill-name --target codex --output dist
 ```
 
-### Output Directory Structure
+By default, when `--output` is omitted, CLI output root is `~/.skill-universe` (or `%USERPROFILE%\.skill-universe` on Windows).
+
+### Output Directory Structure (`--output dist`)
 
 ```
 dist/
@@ -476,6 +478,8 @@ npx skill-universe list owner/repo
 # List locally installed skills
 npx skill-universe list --installed
 ```
+
+Without `--output`, `install` and `list --installed` use `~/.skill-universe` (or `%USERPROFILE%\.skill-universe` on Windows).
 
 ---
 
